@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	. "heapscheduler/jobs"
 	. "heapscheduler/scheduler"
+	"heapscheduler/db"
 	"net/http"
-	"time"
 	"strconv"
+	"log"
 )
 
 
@@ -25,10 +26,11 @@ func addJobHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job.Status = StatusPending
-	job.CreatedAt = time.Now()
-	job.UpdatedAt = time.Now()
-
+	success := sched.AddJob(&job)
+	if !success {
+		http.Error(w, "Failed to add job", http.StatusInternalServerError)
+		return
+	}
 }
 
 func cancelJobHandler(w http.ResponseWriter, r *http.Request) {
@@ -64,13 +66,73 @@ func cancelJobHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Job cancelled successfully"))
+}
 
+func updateJobPriorityHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, "Only PUT method is allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var job Job
+	if err := json.NewDecoder(r.Body).Decode(&job); err != nil {
+		http.Error(w, "Failed to decode JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Read ID from query param, e.g., /jobs/priority?id=42&priority=10
+	query := r.URL.Query()
+	idStr := query.Get("id")
+	if idStr == "" {
+		http.Error(w, "Missing job ID", http.StatusBadRequest)
+		return
+	}
+
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid job ID", http.StatusBadRequest)
+		return
+	}
+
+	newPriorityStr := query.Get("priority")
+	if newPriorityStr == "" {
+		http.Error(w, "Missing new priority", http.StatusBadRequest)
+		return
+	}
+
+	newPriority, err := strconv.Atoi(newPriorityStr)
+	if err != nil {
+		http.Error(w, "Invalid new priority", http.StatusBadRequest)
+		return
+	}
+
+	if ok := sched.UpdateJobPriority(id, newPriority); !ok {
+		http.Error(w, "Job not found or already removed", http.StatusNotFound)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Job priority updated successfully"))
 }
 
 func main() {
-	sched = NewScheduler() // Assign actual scheduler instance to it in main()
+	// 1. Connect to DB
+	pool, err := db.ConnectDB()
+	if err != nil {
+		log.Fatalf("Failed to connect to DB: %v", err)
+	}
+	defer pool.Close()
+
+	// 2. Run DB migration (creates jobs table)
+	if err := db.Migrate(pool); err != nil {
+		log.Fatalf("Failed to run migration: %v", err)
+	}
+
+	// 3. Initialize Scheduler with DB connection
+	sched = NewScheduler(pool) // Assign actual scheduler instance to it in main()
 
 	http.HandleFunc("/jobs/add", addJobHandler)
 	http.HandleFunc("/jobs/cancel", cancelJobHandler)
+	http.HandleFunc("/jobs/priority", updateJobPriorityHandler)
 	http.ListenAndServe(":8080", nil)
 }
