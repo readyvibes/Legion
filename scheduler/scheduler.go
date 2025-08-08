@@ -118,15 +118,15 @@ func (s *Scheduler) UpdateJobPriority(id uint64, newPriority int) bool {
 		return false // Job not found
 	}
 
-	// Update in memory
-	job.Priority = newPriority
-	heap.Fix(&s.jobQueue, job.Index) // Reorder the heap
-
 	// Update in DB
 	if err := s.updateJobPriorityInDB(id, newPriority); err != nil {
 		// Optional: log error
 		return false
 	}
+
+	// Update in memory
+	job.Priority = newPriority
+	heap.Fix(&s.jobQueue, job.Index) // Reorder the heap
 
 	return true
 }
