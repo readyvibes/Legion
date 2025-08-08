@@ -34,7 +34,7 @@ func (s *Scheduler) AddJob(job *Job) bool {
 	defer s.mu.Unlock()
 
 	// First persist to DB to get the ID
-	if err := s.persistJobToDB(job); err != nil {
+	if dbErr := s.persistJobToDB(job); dbErr != nil {
 		return false // Could log error too
 	}
 
@@ -42,40 +42,29 @@ func (s *Scheduler) AddJob(job *Job) bool {
 	heap.Push(&s.jobQueue, job)
 	s.jobMap[job.ID] = job
 
-	job.Status = StatusPending
-	job.CreatedAt = time.Now()
-
 	return true
 }
 
 func (s *Scheduler) persistJobToDB(job *Job) error {
-	query := `
-		INSERT INTO jobs (name, description, status, command, user, priority, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING id;
-	`
-
-	// Set timestamps once and reuse
-	now := time.Now()
-
-	err := s.db.QueryRow(
-		context.Background(),
-		query,
-		job.Name,
-		job.Description,
-		job.Status,
-		job.Command,
-		job.User,
-		job.Priority,
-		now,
-		now,
-	).Scan(&job.ID)
-
-	// Update the Job struct with DB-generated timestamps
-	job.CreatedAt = now
-	job.UpdatedAt = now
-
-	return err
+    query := `
+        INSERT INTO jobs (name, description, status, command, user, priority, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING id;
+    `
+    now := time.Now()
+    return s.db.QueryRow(
+        context.Background(),
+        query,
+        job.Name,
+        job.Description,
+        job.Status,
+        job.Command,
+        job.User,
+        job.Priority,
+        now,
+        now,
+    ).Scan(&job.ID) // This sets the ID from the DB
+	// The QueryRow method returns a row object, which is immediately followed by a call to .Scan(&job.ID). The Scan method attempts to read the first column of the result row into the job.ID field.
 }
 
 // Canceling Jobs

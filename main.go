@@ -20,13 +20,14 @@ func addJobHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var job Job
-	if err := json.NewDecoder(r.Body).Decode(&job); err != nil {
+	// In addJobHandler (main.go)
+	var req NewJobRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Failed to decode JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	success := sched.AddJob(&job)
+	job := NewJob(req)
+	success := sched.AddJob(job)
 	if !success {
 		http.Error(w, "Failed to add job", http.StatusInternalServerError)
 		return
