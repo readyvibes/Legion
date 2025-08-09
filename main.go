@@ -1,18 +1,19 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"heapscheduler/db"
 	. "heapscheduler/jobs"
 	. "heapscheduler/scheduler"
-	"heapscheduler/db"
+	"log"
 	"net/http"
 	"strconv"
-	"log"
+	"flag"
 )
 
-
 var sched *Scheduler // “I’m declaring a package-level variable named sched that will hold a pointer to a Scheduler.”
-					 // This doesn't give it a value yet — it just reserves the name sched at the package level, so it’s accessible in all functions in that file, like your createJobHandler.
+// This doesn't give it a value yet — it just reserves the name sched at the package level, so it’s accessible in all functions in that file, like your createJobHandler.
 
 func addJobHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -116,7 +117,9 @@ func updateJobPriorityHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Job priority updated successfully"))
 }
 
-func main() {
+func runMaster() {
+	// Initialize DB, scheduler, API, etc.
+	// Accept jobs, schedule them, assign to workers
 	// 1. Connect to DB
 	pool, err := db.ConnectDB()
 	if err != nil {
@@ -132,8 +135,57 @@ func main() {
 	// 3. Initialize Scheduler with DB connection
 	sched = NewScheduler(pool) // Assign actual scheduler instance to it in main()
 
+	// 4. If host running scheduler was rebooted, restore pending and prev running jobs from DB back to priority queue
+	rows, err := pool.Query(context.Background(),
+		`SELECT id, name, description, status, start_time, end_ttime, command, user, priority, created_at, updated_at, index
+         FROM jobs WHERE status = $1 OR status = $2`, StatusRunning, StatusPending)
+	if err != nil {
+		log.Fatalf("Failed to query running jobs: %v", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var job Job
+		err := rows.Scan(
+			&job.ID, &job.Name, &job.Description, &job.Status,
+			&job.StartTime, &job.EndTTime, &job.Command, &job.User,
+			&job.Priority, &job.CreatedAt, &job.UpdatedAt, &job.Index,
+		)
+		if err != nil {
+			log.Printf("Failed to scan job: %v", err)
+			continue
+		}
+		sched.AddJob(&job)
+	}
+
 	http.HandleFunc("/jobs/add", addJobHandler)
 	http.HandleFunc("/jobs/cancel", cancelJobHandler)
 	http.HandleFunc("/jobs/priority", updateJobPriorityHandler)
 	http.ListenAndServe(":8080", nil)
+}
+
+func runWorker() {
+	// Connect to master, poll for jobs, execute jobs, report status
+	// This would typically involve connecting to the master node's API
+	// and fetching jobs to execute.
+	// For simplicity, this is left as a placeholder.
+	log.Println("Worker started, waiting for jobs...")
+}
+
+func main() {
+    // Option 1: Use a command-line flag
+    role := flag.String("role", "worker", "Node role: master or worker")
+    flag.Parse()
+
+    // Option 2: Or use an environment variable
+    // role := os.Getenv("NODE_ROLE")
+
+    switch *role {
+	case "master":
+        runMaster()
+	case "worker":
+		runWorker()
+	default:
+		log.Fatalf("Invalid role: %s. Use 'master' or 'worker'.", *role)
+	}
 }
