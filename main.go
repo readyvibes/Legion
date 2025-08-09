@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"heapscheduler/db"
 	. "heapscheduler/jobs"
 	. "heapscheduler/scheduler"
 	"log"
 	"net/http"
 	"strconv"
-	"flag"
 )
 
 var sched *Scheduler // “I’m declaring a package-level variable named sched that will hold a pointer to a Scheduler.”
@@ -135,27 +135,17 @@ func runMaster() {
 	// 3. Initialize Scheduler with DB connection
 	sched = NewScheduler(pool) // Assign actual scheduler instance to it in main()
 
-	// 4. If host running scheduler was rebooted, restore pending and prev running jobs from DB back to priority queue
-	rows, err := pool.Query(context.Background(),
-		`SELECT id, name, description, status, start_time, end_ttime, command, user, priority, created_at, updated_at, index
-         FROM jobs WHERE status = $1 OR status = $2`, StatusRunning, StatusPending)
-	if err != nil {
-		log.Fatalf("Failed to query running jobs: %v", err)
-	}
-	defer rows.Close()
+	var jobCountDB int
+	jobErr := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM jobs").Scan(&jobCountDB)
 
-	for rows.Next() {
-		var job Job
-		err := rows.Scan(
-			&job.ID, &job.Name, &job.Description, &job.Status,
-			&job.StartTime, &job.EndTTime, &job.Command, &job.User,
-			&job.Priority, &job.CreatedAt, &job.UpdatedAt, &job.Index,
-		)
-		if err != nil {
-			log.Printf("Failed to scan job: %v", err)
-			continue
-		}
-		sched.AddJob(&job)
+	if jobErr != nil {
+		log.Fatalf("Failed to count jobs in DB: %v", jobErr)
+	}
+
+	if jobCountDB > 0 && len(sched.JobQueue) == 0  {
+		// 4. Restore jobs from DB back to into priority queue
+		log.Printf("Restoring %d jobs from DB into scheduler...", jobCountDB)
+		sched.RestoreJobs(pool)
 	}
 
 	http.HandleFunc("/jobs/add", addJobHandler)
@@ -173,16 +163,16 @@ func runWorker() {
 }
 
 func main() {
-    // Option 1: Use a command-line flag
-    role := flag.String("role", "worker", "Node role: master or worker")
-    flag.Parse()
+	// Option 1: Use a command-line flag
+	role := flag.String("role", "worker", "Node role: master or worker")
+	flag.Parse()
 
-    // Option 2: Or use an environment variable
-    // role := os.Getenv("NODE_ROLE")
+	// Option 2: Or use an environment variable
+	// role := os.Getenv("NODE_ROLE")
 
-    switch *role {
+	switch *role {
 	case "master":
-        runMaster()
+		runMaster()
 	case "worker":
 		runWorker()
 	default:
