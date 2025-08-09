@@ -1,7 +1,7 @@
 package scheduler
 
 import (
-    "heapscheduler/jobs"
+	"heapscheduler/jobs"
 )
 
 // JobQueue is a min-heap of *Job based on Priority (lower value = higher priority)

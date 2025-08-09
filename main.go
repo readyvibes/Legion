@@ -145,7 +145,7 @@ func runMaster() {
 	if jobCountDB > 0 && len(sched.JobQueue) == 0  {
 		// 4. Restore jobs from DB back to into priority queue
 		log.Printf("Restoring %d jobs from DB into scheduler...", jobCountDB)
-		sched.RestoreJobs(pool)
+		sched.RestoreAndRunJobs(pool)
 	}
 
 	http.HandleFunc("/jobs/add", addJobHandler)

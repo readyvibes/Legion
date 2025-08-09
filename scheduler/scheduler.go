@@ -210,12 +210,13 @@ func (s *Scheduler) RunJob(job Job) bool {
 		cmd.Run()
 		job.EndTTime = time.Now()
 		job.Status = "Completed"
+		s.updateJobStatusInDB(job.ID, StatusCompleted) // Update status in DB
 	}(s.jobMap[job.ID]) // Pass pointer for updates
 
 	return true
 }
 
-func (s *Scheduler) RestoreJobs(pool *pgxpool.Pool) ([]Job, error) {
+func (s *Scheduler) RestoreAndRunJobs(pool *pgxpool.Pool) error {
 	// If host running scheduler was rebooted, restore pending and prev running jobs from DB back to priority queue
 	rows, err := pool.Query(context.Background(),
 		`SELECT id, name, description, status, start_time, end_ttime, command, user, priority, created_at, updated_at, index
@@ -238,4 +239,27 @@ func (s *Scheduler) RestoreJobs(pool *pgxpool.Pool) ([]Job, error) {
 		}
 		s.AddJob(&job)
 	}
+
+	runningJobs := s.FindRunningJobs()
+
+	for i := 0; i < len(runningJobs); i++ {
+		job := &runningJobs[i]
+		s.RunJob(*job) // Start the job
+	}
+
+	return nil
+}
+
+func (s *Scheduler) FindRunningJobs() []Job {
+
+    runningJobs := []Job{}
+    // Iterate through the heap to find running jobs
+
+    for i := 0; i < s.JobQueue.Len(); i++ {
+        if (s.JobQueue)[i].Status == StatusRunning {
+            return append(runningJobs, *(s.JobQueue)[i]) // Return a copy of the running job
+        }
+    }
+
+    return runningJobs
 }
