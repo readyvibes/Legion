@@ -3,12 +3,12 @@ package cluster
 import (
 	"container/heap"
 	"context"
-	. "heapscheduler/jobs"
-	. "heapscheduler/priorityqueue"
 	"log"
-	"os/exec"
 	"sync"
 	"time"
+
+	. "heapscheduler/jobs"
+	. "heapscheduler/priorityqueue"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -43,13 +43,26 @@ func NewMasterNode(dbURL string) *MasterNode {
 	heap.Init(&h)
 
 	return &MasterNode{
-		jobQueue: h,
+		jobQueue: &h,
 		jobMap:   make(map[uint64]*Job),
 		db:       pool,
 	}
 }
 
-// Adding Jobs
+func (m *MasterNode) Start() error {
+	// Initialize database tables
+
+	// Start scheduler loop
+	go m.schedulerLoop()
+	
+	// Start worker health monitor
+	go m.monitorWorkers()
+
+	log.Println("Master node started")
+	return nil
+}
+
+// Adding Jobs to queue
 func (m *MasterNode) AddJob(job *Job) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -60,7 +73,7 @@ func (m *MasterNode) AddJob(job *Job) bool {
 	}
 
 	// Then push into heap and map
-	heap.Push(&m.jobQueue, job)
+	heap.Push(m.jobQueue, job)
 	m.jobMap[job.ID] = job
 
 	return true
@@ -97,10 +110,10 @@ func (m *MasterNode) CancelJob(id uint64) bool {
 	// For now, we just remove it from the queue and update status
 
 	job, ok := m.jobMap[id]
-	if !ok || job.Index < 0 || job.Index >= len(m.jobQueue) {
+	if !ok || job.Index < 0 || job.Index >= len(*m.jobQueue) {
 		return false // Job not found or invalid index
 	}
-	heap.Remove(&m.jobQueue, job.Index) // Remove from Priority Queue
+	heap.Remove(m.jobQueue, job.Index) // Remove from Priority Queue
 	delete(m.jobMap, id)                // Remove from jobMap
 
 	// Update status in database
@@ -147,7 +160,7 @@ func (m *MasterNode) UpdateJobPriority(id uint64, newPriority int) bool {
 
 	// Update in memory
 	job.Priority = newPriority
-	heap.Fix(&m.jobQueue, job.Index) // Reorder the heap
+	heap.Fix(m.jobQueue, job.Index) // Reorder the heap
 
 	return true
 }
@@ -166,6 +179,17 @@ func (m *MasterNode) updateJobPriorityInDB(id uint64, newPriority int) error {
 		id,
 	)
 	return err
+}
+
+func (m *MasterNode) ListJobs() ([]*Job, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	jobs := make([]*Job, 0, len(m.jobMap))
+	for _, job := range m.jobMap {
+		jobs = append(jobs, job)
+	}
+	return jobs, nil
 }
 
 // Get Job by ID
@@ -204,7 +228,7 @@ func (m *MasterNode) GetJobFromDB(id uint64) (*Job, error) {
 		&job.CreatedAt,
 		&job.UpdatedAt,
 		&job.StartTime,
-		&job.EndTTime,
+		&job.EndTime,
 	)
 
 	if err != nil {
@@ -214,61 +238,6 @@ func (m *MasterNode) GetJobFromDB(id uint64) (*Job, error) {
 	return &job, nil
 }
 
-func (m *MasterNode) RunJob(job Job) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// Check if the job is in the queue
-	if _, exists := m.jobMap[job.ID]; !exists {
-		return false // Job not found
-	}
-
-	go func(job *Job) {
-		job.StartTime = time.Now()
-		job.Status = "Running"
-		cmd := exec.Command(job.Command)
-		cmd.Run()
-		job.EndTTime = time.Now()
-		job.Status = "Completed"
-		m.updateJobStatusInDB(job.ID, StatusCompleted) // Update status in DB
-	}(m.jobMap[job.ID]) // Pass pointer for updates
-
-	return true
-}
-
-// func (m *MasterNode) RestoreAndRunJobs(pool *pgxpool.Pool) error {
-// 	// If host running MasterNode was rebooted, restore pending and prev running jobs from DB back to priority queue
-// 	rows, err := pool.Query(context.Background(),
-// 		`SELECT id, name, description, status, start_time, end_ttime, command, user, priority, created_at, updated_at, index
-//          FROM jobs WHERE status = $1 OR status = $2`, StatusRunning, StatusPending)
-// 	if err != nil {
-// 		log.Fatalf("Failed to query running jobs: %v", err)
-// 	}
-// 	defer rows.Close()
-
-// 	for rows.Next() {
-// 		var job Job
-// 		err := rows.Scan(
-// 			&job.ID, &job.Name, &job.Description, &job.Status,
-// 			&job.StartTime, &job.EndTTime, &job.Command, &job.User,
-// 			&job.Priority, &job.CreatedAt, &job.UpdatedAt, &job.Index,
-// 		)
-// 		if err != nil {
-// 			log.Printf("Failed to scan job: %v", err)
-// 			continue
-// 		}
-// 		m.AddJob(&job)
-// 	}
-
-// 	runningJobs := m.FindRunningJobs()
-
-// 	for i := 0; i < len(runningJobs); i++ {
-// 		job := &runningJobs[i]
-// 		m.RunJob(*job) // Start the job
-// 	}
-
-// 	return nil
-// }
 
 func (m *MasterNode) getAvailableWorkers() []*WorkerNode {
 	var available []*WorkerNode
@@ -315,5 +284,80 @@ func (m *MasterNode) scheduleJobs() {
 		go worker.ExecuteJob(job)
 
 		log.Printf("Assigned job %s to worker %s", job.ID, worker.ID)
+	}
+}
+
+func (m *MasterNode) schedulerLoop() {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-m.ctx.Done():
+			return
+		case <-ticker.C:
+			m.scheduleJobs()
+		}
+	}
+}
+
+func (m *MasterNode) OnJobCompleted(jobID uint64, result string, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	job, exists := m.jobMap[jobID]
+	if !exists {
+		return
+	}
+
+	now := time.Now()
+	job.EndTime = now
+
+	if err != nil {
+		job.Status = StatusFailed
+		job.Error = err.Error()
+	} else {
+		job.Status = StatusCompleted
+		job.Result = result
+	}
+
+	// Update database
+	m.updateJobStatusInDB(job.ID, job.Status)
+
+	log.Printf("Job %s completed with status %s", jobID, job.Status)
+}
+
+func (m *MasterNode) RegisterWorker(worker *WorkerNode) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	m.workers[worker.ID] = worker
+	log.Printf("Worker %s registered", worker.ID)
+}
+
+func (m *MasterNode) checkWorkerHealth() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := time.Now()
+	for id, worker := range m.workers {
+		if now.Sub(worker.lastSeen) > 60*time.Second {
+			log.Printf("Worker %s appears to be down", id)
+			// Handle worker failure - could reschedule its jobs
+		}
+	}
+}
+
+func (m *MasterNode) monitorWorkers() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-m.ctx.Done():
+			return
+		case <-ticker.C:
+			m.checkWorkerHealth()
+		}
 	}
 }

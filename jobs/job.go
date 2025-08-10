@@ -11,6 +11,7 @@ const (
 	StatusRunning   Status = "Running"
 	StatusCompleted Status = "Completed"
 	StatusCancelled Status = "Cancelled"
+	StatusFailed    Status = "Failed"
 )
 
 type Job struct {
@@ -19,7 +20,7 @@ type Job struct {
 	Description string
 	Status      Status
 	StartTime   time.Time
-	EndTTime    time.Time
+	EndTime    time.Time
 	Command     string
 	User        string
 	Priority    int
@@ -27,22 +28,10 @@ type Job struct {
 	UpdatedAt   time.Time
 	Index       int // Index in the priority queue
 	WorkerID    string // ID of the worker executing the job
+	Result 		string // Result of the job execution
+	Error       string
 }
 
-func (j *Job) UpdateStatus(status Status) {
-	j.Status = status
-	j.UpdatedAt = time.Now()
-}
-
-func (j *Job) SetStartTime(startTime time.Time) {
-	j.StartTime = startTime
-	j.UpdatedAt = time.Now()
-}
-
-func (j *Job) SetEndTime(endTime time.Time) {
-	j.EndTTime = endTime
-	j.UpdatedAt = time.Now()
-}
 
 type NewJobRequest struct {
 	Name        string `json:"name"`

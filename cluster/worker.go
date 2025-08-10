@@ -1,14 +1,20 @@
 package cluster
 
 import (
-	"bytes"
-	"encoding/json"
-	"net/http"
 	"time"
 	"sync"
 	"context"
 	. "heapscheduler/jobs"
+	"log"
+	"fmt"
 )
+
+type WorkerStatus struct {
+	ID         string    
+	Available  bool      
+	LastSeen   time.Time 
+	CurrentJob uint64 // ID of the current job being executed
+}
 
 type WorkerNode struct {
 	ID         string

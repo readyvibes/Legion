@@ -100,7 +100,7 @@ func (c *Cluster) handleClusterStatus(w http.ResponseWriter, r *http.Request) {
 	status := map[string]interface{}{
 		"workers": workerCount,
 		"master":  "running",
-		"queue_size": c.masterNode.GetQueueSize(),
+		"queue_size": c.masterNode.GetQueueLength(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
