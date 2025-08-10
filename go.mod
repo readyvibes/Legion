@@ -2,7 +2,10 @@ module heapscheduler
 
 go 1.24.5
 
-require github.com/jackc/pgx/v5 v5.7.5
+require (
+	github.com/gorilla/mux v1.8.1
+	github.com/jackc/pgx/v5 v5.7.5
+)
 
 require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect

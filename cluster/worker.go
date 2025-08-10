@@ -5,58 +5,113 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+	"sync"
+	"context"
+	. "heapscheduler/jobs"
 )
 
 type WorkerNode struct {
-	Node
+	ID         string
+	master     *MasterNode
+	available  bool
+	currentJob *Job
+	lastSeen   time.Time
+	mu         sync.RWMutex
+	ctx        context.Context
+	cancel     context.CancelFunc
 }
 
-// RegisterWithMaster registers this node with the master node.
-func (w *WorkerNode) RegisterWithMaster(masterAddr string, node Node) error {
-	// Marshal the 'node' object into JSON format and store the result in 'data'.
-	// Any error returned by json.Marshal is ignored.
-	data, _ := json.Marshal(node)
-
-	// Send a POST request to the master's /register endpoint with the node data as JSON.
-	resp, err := http.Post("http://"+masterAddr+"/register", "application/json", bytes.NewReader(data))
-	// If there was an error sending the request, return the error.
-	if err != nil {
-		return err
+func NewWorkerNode(id string, master *MasterNode) *WorkerNode {
+	ctx, cancel := context.WithCancel(context.Background())
+	
+	worker := &WorkerNode{
+		ID:        id,
+		master:    master,
+		available: true,
+		lastSeen:  time.Now(),
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 
-	// Ensure the response body is closed after we're done.
-	defer resp.Body.Close()
-	// Return nil to indicate success.
-	return nil
+	// Start heartbeat
+	go worker.heartbeatLoop()
+
+	return worker
 }
 
-// SendHeartbeat sends periodic heartbeats to the master node.
-func (w *WorkerNode) SendHeartbeat(masterAddr string, node Node) {
+func (w *WorkerNode) ExecuteJob(job *Job) {
+	w.mu.Lock()
+	w.available = false
+	w.currentJob = job
+	w.mu.Unlock()
+
+	defer func() {
+		w.mu.Lock()
+		w.available = true
+		w.currentJob = nil
+		w.mu.Unlock()
+	}()
+
+	log.Printf("Worker %s executing job %s: %s", w.ID, job.ID, job.Command)
+
+	// Simulate job execution
+	result, err := w.executeCommand(job.Command)
+
+	// Report back to master
+	w.master.OnJobCompleted(job.ID, result, err)
+}
+
+func (w *WorkerNode) executeCommand(command string) (string, error) {
+	// Simulate work with sleep
+	time.Sleep(time.Duration(2+len(command)%5) * time.Second)
+	
+	// Simulate occasional failures
+	if len(command)%7 == 0 {
+		return "", fmt.Errorf("simulated job failure")
+	}
+
+	return fmt.Sprintf("Command '%s' executed successfully on worker %s", command, w.ID), nil
+}
+
+func (w *WorkerNode) IsAvailable() bool {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.available
+}
+
+func (w *WorkerNode) GetStatus() WorkerStatus {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	status := WorkerStatus{
+		ID:        w.ID,
+		Available: w.available,
+		LastSeen:  w.lastSeen,
+	}
+
+	if w.currentJob != nil {
+		status.CurrentJob = w.currentJob.ID
+	}
+
+	return status
+}
+
+func (w *WorkerNode) heartbeatLoop() {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
 	for {
-		data, _ := json.Marshal(node)
-		http.Post("http://"+masterAddr+"/heartbeat", "application/json", bytes.NewReader(data))
-		time.Sleep(10 * time.Second)
+		select {
+		case <-w.ctx.Done():
+			return
+		case <-ticker.C:
+			w.mu.Lock()
+			w.lastSeen = time.Now()
+			w.mu.Unlock()
+		}
 	}
 }
 
-// ExampleWorkerMain demonstrates how a worker node could use the above functions.
-// Remove or adapt this for your actual worker entrypoint.
-func WorkerMain() {
-	worker := WorkerNode{
-		Node: Node{
-			address: "worker1.local",
-			port:    8081,
-			Role:    "worker",
-			Status:  "active",
-		},
-	}
-	masterAddr := "master.local:8080"
-
-	if err := worker.RegisterWithMaster(masterAddr, worker.Node); err != nil {
-		panic(err)
-	}
-	go worker.SendHeartbeat(masterAddr, worker.Node)
-
-	// ...worker logic...
-	select {}
+func (w *WorkerNode) Stop() {
+	w.cancel()
 }

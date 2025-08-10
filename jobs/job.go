@@ -26,6 +26,7 @@ type Job struct {
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	Index       int // Index in the priority queue
+	WorkerID    string // ID of the worker executing the job
 }
 
 func (j *Job) UpdateStatus(status Status) {

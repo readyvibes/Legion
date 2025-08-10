@@ -1,4 +1,4 @@
-package scheduler
+package priorityqueue
 
 import (
 	"heapscheduler/jobs"
