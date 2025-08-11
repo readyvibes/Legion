@@ -17,21 +17,29 @@ type WorkerStatus struct {
 }
 
 type WorkerNode struct {
-	ID         string
-	master     *MasterNode
-	available  bool
-	currentJob *Job
-	lastSeen   time.Time
-	mu         sync.RWMutex
-	ctx        context.Context
-	cancel     context.CancelFunc
+	ID           string
+	master       *MasterNode
+	Address      string 
+	Port 	     int 
+	available    bool
+	currentJobID uint64
+	currentJob   *Job
+	lastSeen     time.Time
+	mu           sync.RWMutex
+	ctx          context.Context
+	cancel       context.CancelFunc
 }
 
 func NewWorkerNode(id string, master *MasterNode) *WorkerNode {
 	ctx, cancel := context.WithCancel(context.Background())
 	
+	// Get local IP address
+	localAddr := getLocalIP()
+
 	worker := &WorkerNode{
 		ID:        id,
+		Address:   localAddr,
+		Port:      8091 + len(id), // Port can be set later if needed
 		master:    master,
 		available: true,
 		lastSeen:  time.Now(),
@@ -58,7 +66,7 @@ func (w *WorkerNode) ExecuteJob(job *Job) {
 		w.mu.Unlock()
 	}()
 
-	log.Printf("Worker %s executing job %s: %s", w.ID, job.ID, job.Command)
+	log.Printf("Worker %s executing job: %s", w.ID, job.Command)
 
 	// Simulate job execution
 	result, err := w.executeCommand(job.Command)

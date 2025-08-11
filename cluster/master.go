@@ -6,6 +6,8 @@ import (
 	"log"
 	"sync"
 	"time"
+	"net/http"
+	"encoding/json"
 
 	. "heapscheduler/jobs"
 	. "heapscheduler/priorityqueue"
@@ -47,6 +49,50 @@ func NewMasterNode(dbURL string) *MasterNode {
 		jobMap:   make(map[uint64]*Job),
 		db:       pool,
 	}
+}
+
+func (m *MasterNode) StartCommunicationServer() {
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/worker/register", m.handleWorkerRegister)
+
+
+}
+
+func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request) {
+	var msg Message
+	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	payload, ok := msg.Payload.(map[string]interface{})
+	if !ok {
+		http.Error(w, "Invalid payload", http.StatusBadRequest)
+		return
+	}
+
+	workerID := payload["worker_id"].(string)
+	address := payload["address"].(string)
+	port := int(payload["port"].(float64))
+
+	m.mu.Lock()
+
+	// Create or update worker
+	if _, exists := m.workers[workerID]; !exists {
+		worker := NewWorkerNode(workerID, m)
+		m.workers[workerID] = worker
+		log.Printf("Worker %s registered from %s:%d", workerID, address, port)
+	} else {
+		// Update existing worker
+		m.workers[workerID].lastSeen = time.Now()
+		m.workers[workerID].available = true
+	}
+
+	m.mu.Unlock()
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "registered"})
+
 }
 
 func (m *MasterNode) Start() error {
@@ -283,7 +329,7 @@ func (m *MasterNode) scheduleJobs() {
 		// Send job to worker
 		go worker.ExecuteJob(job)
 
-		log.Printf("Assigned job %s to worker %s", job.ID, worker.ID)
+		log.Printf("Assigned job to worker %s", worker.ID)
 	}
 }
 
