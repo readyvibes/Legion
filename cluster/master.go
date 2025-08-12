@@ -55,8 +55,17 @@ func (m *MasterNode) StartCommunicationServer() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/worker/register", m.handleWorkerRegister)
+	mux.HandleFunc("/worker/heartbeat", m.handleHeartBeat)
 
+	server := &http.Server{
+		Addr:    ":9090", // Worker communication port
+		Handler: mux,
+	}
 
+	log.Println("Master communication server starting on :9090")
+	if err := server.ListenAndServe(); err != nil {
+		log.Printf("Communication server error: %v", err)
+	}
 }
 
 func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request) {
@@ -79,8 +88,8 @@ func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request
 	m.mu.Lock()
 
 	// Create or update worker
-	if _, exists := m.workers[workerID]; !exists {
-		worker := NewWorkerNode(workerID, m)
+	if _, exists := m.workers[workerID]; !exists { // If workerID does not exist in Workers
+		worker := NewWorkerNode(workerID, m) 
 		m.workers[workerID] = worker
 		log.Printf("Worker %s registered from %s:%d", workerID, address, port)
 	} else {
@@ -93,6 +102,34 @@ func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "registered"})
 
+}
+
+func (m *MasterNode) handleHeartBeat(w http.ResponseWriter, r *http.Request) {
+	var msg Message
+	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	m.mu.Lock()
+
+	if worker, exists := m.workers[msg.WorkerID]; exists {
+		worker.lastSeen = time.Now()
+		
+		if payload, ok := msg.Payload.(map[string]interface{}); ok {
+			worker.available = payload["available"].(bool)
+			if jobID, exists := payload["current_job_id"]; exists && jobID != nil {
+				worker.currentJobID = uint64(jobID.(float64))
+			} else {
+				worker.currentJobID = 0
+			}
+		}
+	}
+
+	m.mu.Unlock()
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 func (m *MasterNode) Start() error {
@@ -370,7 +407,7 @@ func (m *MasterNode) OnJobCompleted(jobID uint64, result string, err error) {
 	// Update database
 	m.updateJobStatusInDB(job.ID, job.Status)
 
-	log.Printf("Job %s completed with status %s", jobID, job.Status)
+	log.Printf("Job completed with status %s", job.Status)
 }
 
 func (m *MasterNode) RegisterWorker(worker *WorkerNode) {
