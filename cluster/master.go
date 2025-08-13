@@ -8,6 +8,7 @@ import (
 	"time"
 	"net/http"
 	"encoding/json"
+	"fmt"
 
 	. "heapscheduler/jobs"
 	. "heapscheduler/priorityqueue"
@@ -51,11 +52,30 @@ func NewMasterNode(dbURL string) *MasterNode {
 	}
 }
 
+func (m *MasterNode) Start() error {
+	
+	m.ctx, m.cancel = context.WithCancel(context.Background())
+	
+	// Start communication server for workers
+	go m.StartCommunicationServer()
+
+	// Start scheduler loop
+	go m.schedulerLoop()
+	
+	// Start worker health monitor
+	go m.monitorWorkers()
+
+	log.Println("Master node started")
+	return nil
+}
+
+
 func (m *MasterNode) StartCommunicationServer() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/worker/register", m.handleWorkerRegister)
 	mux.HandleFunc("/worker/heartbeat", m.handleHeartBeat)
+	mux.HandleFunc("/worker/job-complete", m.handleJobComplete)
 
 	server := &http.Server{
 		Addr:    ":9090", // Worker communication port
@@ -132,17 +152,38 @@ func (m *MasterNode) handleHeartBeat(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-func (m *MasterNode) Start() error {
-	// Initialize database tables
+func (m *MasterNode) handleJobComplete(w http.ResponseWriter, r *http.Request) {
+	var msg Message 
+	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+	}
 
-	// Start scheduler loop
-	go m.schedulerLoop()
-	
-	// Start worker health monitor
-	go m.monitorWorkers()
+	payload, ok := msg.Payload.(map[string]interface{})
+	if !ok {
+		http.Error(w, "Invalid Payload", http.StatusBadRequest)
+	}
 
-	log.Println("Master node started")
-	return nil
+	jobID := uint64(payload["job_id"].(float64))
+	result := ""
+	errorMsg := ""
+
+	if r, exists := payload["result"]; exists && r != nil {
+		result = r.(string)
+	}
+
+	if e, exists := payload["error"]; exists && e != nil {
+		errorMsg = e.(string)
+	}
+
+	var err error
+	if errorMsg != "" {
+		err = fmt.Errorf("%s", errorMsg)
+	}
+
+	m.OnJobCompleted(jobID, result, err)
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "received"})
 }
 
 // Adding Jobs to queue
