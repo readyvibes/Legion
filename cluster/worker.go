@@ -4,9 +4,12 @@ import (
 	"time"
 	"sync"
 	"context"
-	. "heapscheduler/jobs"
+	"net/http"
 	"log"
 	"fmt"
+	"encoding/json"
+
+	. "heapscheduler/jobs"
 )
 
 type WorkerStatus struct {
@@ -47,10 +50,67 @@ func NewWorkerNode(id string, master *MasterNode) *WorkerNode {
 		cancel:    cancel,
 	}
 
+	go worker.startWorkerServer()
+
 	// Start heartbeat
 	go worker.heartbeatLoop()
 
 	return worker
+}
+
+func (w *WorkerNode) startWorkerServer() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/job/assign", w.handleJobAssign)
+	mux.HandleFunc("/job/cancel", w.handleJobCancel)
+
+	server := &http.Server{
+		Addr:    fmt.Sprintf(":%d", w.Port),
+		Handler: mux,
+	}
+
+	log.Printf("Worker %s server starting on :%d", w.ID, w.Port)
+	if err := server.ListenAndServe(); err != nil {
+		log.Printf("Worker server error: %v", err)
+	}
+}
+
+func (w *WorkerNode) handleJobAssign(writer http.ResponseWriter, r *http.Request) {
+	var msg Message
+	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		http.Error(writer, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	payload, ok := msg.Payload.(map[string]interface{})
+	if !ok {
+		http.Error(writer, "Invalid payload", http.StatusBadRequest)
+		return
+	}
+
+	jobData, _ := json.Marshal(payload["job"])
+	var job Job
+	json.Unmarshal(jobData, &job)
+	go w.ExecuteJob(&job)
+	
+	writer.WriteHeader(http.StatusOK)
+	json.NewEncoder(writer).Encode(map[string]string{"status": "accepted"})
+}
+
+func (w *WorkerNode) handleJobCancel(writer http.ResponseWriter, r *http.Request) {
+	w.mu.Lock()
+	if w.currentJob != nil {
+		// Stop Job Function Below
+		// {Insert Here}
+
+		w.currentJob = nil 
+		w.currentJobID = 0
+		w.available = true
+	}
+
+	w.mu.Unlock()
+
+	writer.WriteHeader(http.StatusOK)
+	json.NewEncoder(writer).Encode(map[string]string{"status":"cancelled"})
 }
 
 func (w *WorkerNode) ExecuteJob(job *Job) {
