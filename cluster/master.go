@@ -57,13 +57,13 @@ func (m *MasterNode) Start() error {
 	m.ctx, m.cancel = context.WithCancel(context.Background())
 	
 	// Start communication server for workers
-	go m.StartCommunicationServer()
+	go m.StartCommunicationServer() // Lines 73 - 187
 
 	// Start scheduler loop
-	go m.schedulerLoop()
+	go m.schedulerLoop() // Lines 189 - 259
 	
 	// Start worker health monitor
-	go m.monitorWorkers()
+	go m.monitorWorkers() // Lines 261 - 286
 
 	log.Println("Master node started")
 	return nil
@@ -186,6 +186,105 @@ func (m *MasterNode) handleJobComplete(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "received"})
 }
 
+func (m *MasterNode) schedulerLoop() {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-m.ctx.Done():
+			return
+		case <-ticker.C:
+			m.scheduleJobs()
+		}
+	}
+}
+
+func (m *MasterNode) scheduleJobs() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Find available workers
+	availableWorkers := m.getAvailableWorkers()
+	if len(availableWorkers) == 0 {
+		return
+	}
+
+	// Assign jobs to available workers
+	for len(availableWorkers) > 0 && m.jobQueue.Len() > 0 {
+		job := heap.Pop(m.jobQueue).(*Job)
+		worker := availableWorkers[0]
+		availableWorkers = availableWorkers[1:]
+
+		// Assign job to worker
+		job.Status = StatusRunning
+		job.WorkerID = worker.ID
+		now := time.Now()
+		job.StartTime = now
+
+		// Update database
+		m.updateJobStatusInDB(job.ID, StatusRunning)
+
+		// Send job to worker
+		go worker.ExecuteJob(job)
+
+		log.Printf("Assigned job to worker %s", worker.ID)
+	}
+}
+
+func (m *MasterNode) getAvailableWorkers() []*WorkerNode {
+	var available []*WorkerNode
+	for _, worker := range m.workers {
+		if worker.IsAvailable() {
+			available = append(available, worker)
+		}
+	}
+	return available
+}
+
+func (m *MasterNode) updateJobStatusInDB(id uint64, status Status) error {
+	query := `
+		UPDATE jobs
+		SET status = $1, updated_at = $2
+		WHERE id = $3;
+	`
+	_, err := m.db.Exec(
+		context.Background(),
+		query,
+		string(status),
+		time.Now(),
+		id,
+	)
+	return err
+}
+
+func (m *MasterNode) monitorWorkers() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-m.ctx.Done():
+			return
+		case <-ticker.C:
+			m.checkWorkerHealth()
+		}
+	}
+}
+
+func (m *MasterNode) checkWorkerHealth() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := time.Now()
+	for id, worker := range m.workers {
+		if now.Sub(worker.lastSeen) > 60*time.Second {
+			log.Printf("Worker %s appears to be down", id)
+			// Handle worker failure - could reschedule its jobs
+		}
+	}
+}
+
 // Adding Jobs to queue
 func (m *MasterNode) AddJob(job *Job) bool {
 	m.mu.Lock()
@@ -250,21 +349,7 @@ func (m *MasterNode) CancelJob(id uint64) bool {
 }
 
 // Utility
-func (m *MasterNode) updateJobStatusInDB(id uint64, status Status) error {
-	query := `
-		UPDATE jobs
-		SET status = $1, updated_at = $2
-		WHERE id = $3;
-	`
-	_, err := m.db.Exec(
-		context.Background(),
-		query,
-		string(status),
-		time.Now(),
-		id,
-	)
-	return err
-}
+
 
 // Update Job Priority
 func (m *MasterNode) UpdateJobPriority(id uint64, newPriority int) bool {
@@ -363,15 +448,7 @@ func (m *MasterNode) GetJobFromDB(id uint64) (*Job, error) {
 }
 
 
-func (m *MasterNode) getAvailableWorkers() []*WorkerNode {
-	var available []*WorkerNode
-	for _, worker := range m.workers {
-		if worker.IsAvailable() {
-			available = append(available, worker)
-		}
-	}
-	return available
-}
+
 
 func (m *MasterNode) GetQueueLength() int {
 	m.mu.Lock()
@@ -379,51 +456,9 @@ func (m *MasterNode) GetQueueLength() int {
 	return m.jobQueue.Len()
 }
 
-func (m *MasterNode) scheduleJobs() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 
-	// Find available workers
-	availableWorkers := m.getAvailableWorkers()
-	if len(availableWorkers) == 0 {
-		return
-	}
 
-	// Assign jobs to available workers
-	for len(availableWorkers) > 0 && m.jobQueue.Len() > 0 {
-		job := heap.Pop(m.jobQueue).(*Job)
-		worker := availableWorkers[0]
-		availableWorkers = availableWorkers[1:]
 
-		// Assign job to worker
-		job.Status = StatusRunning
-		job.WorkerID = worker.ID
-		now := time.Now()
-		job.StartTime = now
-
-		// Update database
-		m.updateJobStatusInDB(job.ID, StatusRunning)
-
-		// Send job to worker
-		go worker.ExecuteJob(job)
-
-		log.Printf("Assigned job to worker %s", worker.ID)
-	}
-}
-
-func (m *MasterNode) schedulerLoop() {
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-m.ctx.Done():
-			return
-		case <-ticker.C:
-			m.scheduleJobs()
-		}
-	}
-}
 
 func (m *MasterNode) OnJobCompleted(jobID uint64, result string, err error) {
 	m.mu.Lock()
@@ -457,31 +492,4 @@ func (m *MasterNode) RegisterWorker(worker *WorkerNode) {
 	
 	m.workers[worker.ID] = worker
 	log.Printf("Worker %s registered", worker.ID)
-}
-
-func (m *MasterNode) checkWorkerHealth() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	now := time.Now()
-	for id, worker := range m.workers {
-		if now.Sub(worker.lastSeen) > 60*time.Second {
-			log.Printf("Worker %s appears to be down", id)
-			// Handle worker failure - could reschedule its jobs
-		}
-	}
-}
-
-func (m *MasterNode) monitorWorkers() {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-m.ctx.Done():
-			return
-		case <-ticker.C:
-			m.checkWorkerHealth()
-		}
-	}
 }
