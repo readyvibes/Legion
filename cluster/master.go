@@ -3,12 +3,13 @@ package cluster
 import (
 	"container/heap"
 	"context"
-	"log"
-	"sync"
-	"time"
-	"net/http"
 	"encoding/json"
 	"fmt"
+	"log"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
 
 	. "heapscheduler/jobs"
 	. "heapscheduler/priorityqueue"
@@ -225,8 +226,7 @@ func (m *MasterNode) scheduleJobs() {
 		// Update database
 		m.updateJobStatusInDB(job.ID, StatusRunning)
 
-		// Send job to worker
-		go worker.ExecuteJob(job)
+		m.assignJobToWorker(job, worker)
 
 		log.Printf("Assigned job to worker %s", worker.ID)
 	}
@@ -447,18 +447,11 @@ func (m *MasterNode) GetJobFromDB(id uint64) (*Job, error) {
 	return &job, nil
 }
 
-
-
-
 func (m *MasterNode) GetQueueLength() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.jobQueue.Len()
 }
-
-
-
-
 
 func (m *MasterNode) OnJobCompleted(jobID uint64, result string, err error) {
 	m.mu.Lock()
@@ -492,4 +485,42 @@ func (m *MasterNode) RegisterWorker(worker *WorkerNode) {
 	
 	m.workers[worker.ID] = worker
 	log.Printf("Worker %s registered", worker.ID)
+}
+
+func (m *MasterNode) assignJobToWorker(job *Job, worker *WorkerNode) error {
+	url := fmt.Sprintf("http://%s:%d/job/assign", worker.Address, worker.Port)
+
+	msg := Message{
+		Type: MessageTypeJobAssign,
+		WorkerID: worker.ID,
+		TimeStamp: time.Now(),
+		Payload: JobAssignPayload{
+			Job: job,
+		},
+	}
+
+	return m.sendMessageToWorker(url, msg)
+
+}
+
+func (m *MasterNode) sendMessageToWorker(url string, msg Message) error {
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	jsonData, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.Post(url, "application/json", strings.NewReader(string(jsonData)))
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Worker returned status %d", resp.StatusCode)
+	}
+
+	return nil
 }
