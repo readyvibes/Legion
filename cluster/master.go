@@ -25,6 +25,34 @@ type MasterNode struct {
 	mu       sync.Mutex
 	ctx      context.Context
 	cancel   context.CancelFunc
+
+	// for status
+	cpuUtilization    float64
+    memoryUtilization float64
+	jobsRunning       int
+    jobsPending       int
+}
+
+// master status
+type MasterStatus struct {
+    CPUUtilization    float64
+    MemoryUtilization float64
+    JobsRunning       int
+    JobsPending       int
+}
+
+func (w *MasterNode) GetMasterStatus() MasterStatus {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	status := MasterStatus{
+		CPUUtilization: w.cpuUtilization,    
+    	MemoryUtilization: w.memoryUtilization,       
+		JobsRunning: w.jobsRunning,    
+		JobsPending: w.jobsPending,  
+	}
+
+	return status
 }
 
 func NewMasterNode(dbURL string) *MasterNode {

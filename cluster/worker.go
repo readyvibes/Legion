@@ -13,10 +13,13 @@ import (
 )
 
 type WorkerStatus struct {
-	ID         string    
-	Available  bool      
-	LastSeen   time.Time 
-	CurrentJob uint64 // ID of the current job being executed
+	ID         	      string    
+	Available         bool      
+	LastSeen          time.Time
+	CPUUtilization    float64
+    MemoryUtilization float64 
+	CurrentJob        uint64 // ID of the current job being executed
+	JobsRunning       int // amount of jobs in the queue
 }
 
 type WorkerNode struct {
@@ -31,6 +34,11 @@ type WorkerNode struct {
 	mu           sync.RWMutex
 	ctx          context.Context
 	cancel       context.CancelFunc
+
+	// updates for cli
+	cpuUtilization    float64
+    memoryUtilization float64 
+	jobsRunning       int // amount of jobs in the queue
 }
 
 func NewWorkerNode(id string, master *MasterNode) *WorkerNode {
@@ -153,7 +161,8 @@ func (w *WorkerNode) IsAvailable() bool {
 	return w.available
 }
 
-func (w *WorkerNode) GetStatus() WorkerStatus {
+// get individual worker status
+func (w *WorkerNode) GetWorkerStatus() WorkerStatus {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
@@ -161,6 +170,10 @@ func (w *WorkerNode) GetStatus() WorkerStatus {
 		ID:        w.ID,
 		Available: w.available,
 		LastSeen:  w.lastSeen,
+		CPUUtilization: w.cpuUtilization,    
+    	MemoryUtilization: w.memoryUtilization, 
+		CurrentJob: w.currentJobID,        
+		JobsRunning: w.jobsRunning,      
 	}
 
 	if w.currentJob != nil {
@@ -169,6 +182,8 @@ func (w *WorkerNode) GetStatus() WorkerStatus {
 
 	return status
 }
+
+// getAllWorkerStatuses: TODO
 
 func (w *WorkerNode) heartbeatLoop() {
 	ticker := time.NewTicker(10 * time.Second)

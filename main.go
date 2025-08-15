@@ -3,9 +3,13 @@ package main
 import (
 	"log"
 	. "heapscheduler/cluster"
+	//"legion/cmd"
 )
 
 func main() {
+	// start cli
+	//cmd.Execute()
+
 	// Create cluster
 	cluster := NewCluster("postgres://user:password@localhost/scheduler?sslmode=disable")
 
