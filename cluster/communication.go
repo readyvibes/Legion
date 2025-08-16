@@ -41,6 +41,10 @@ type JobAssignPayload struct {
 	Job *Job `json:"job"`
 }
 
+type JobCancelPayload struct {
+	Job *Job `json:"job"`
+}
+
 type JobCompletePayload struct {
 	JobID uint64 `json:"job_id"`
 	Result string `json:"result"`

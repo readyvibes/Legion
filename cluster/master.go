@@ -520,7 +520,7 @@ func (m *MasterNode) cancelJobOnWorker(job *Job, worker *WorkerNode) error {
 		Type: MessageTypeJobCancel,
 		WorkerID: worker.ID,
 		TimeStamp: time.Now(),
-		Payload: JobAssignPayload{
+		Payload: JobCancelPayload{
 			Job: job,
 		},
 	}
