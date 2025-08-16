@@ -41,7 +41,7 @@ type MasterStatus struct {
     JobsPending       int
 }
 
-func (w *MasterNode) GetMasterStatus() MasterStatus {
+func (w *MasterNode) GetMasterStatus() (MasterStatus, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -52,7 +52,19 @@ func (w *MasterNode) GetMasterStatus() MasterStatus {
 		JobsPending: w.jobsPending,  
 	}
 
-	return status
+	return status, nil
+}
+
+func (w *MasterNode) GetAllWorkerStatuses() ([]*WorkerStatus, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	statuses := make([]*WorkerStatus, 0, len(w.workers))
+	for _, worker := range w.workers {
+		status := worker.GetWorkerStatus()
+		statuses = append(statuses, &status)
+	}
+	return statuses, nil // statuses is a list of WorkerStatus type
 }
 
 func NewMasterNode(dbURL string) *MasterNode {

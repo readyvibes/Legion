@@ -12,16 +12,6 @@ import (
 	. "heapscheduler/jobs"
 )
 
-type WorkerStatus struct {
-	ID         	      string    
-	Available         bool      
-	LastSeen          time.Time
-	CPUUtilization    float64
-    MemoryUtilization float64 
-	CurrentJob        uint64 // ID of the current job being executed
-	JobsRunning       int // amount of jobs in the queue
-}
-
 type WorkerNode struct {
 	ID            string
 	Address       string 
@@ -42,6 +32,16 @@ type WorkerNode struct {
 	jobsRunning       int // amount of jobs in the queue
 }
 
+type WorkerStatus struct {
+	ID         	      string    
+	Available         bool      
+	LastSeen          time.Time
+	CPUUtilization    float64
+    MemoryUtilization float64 
+	CurrentJob        uint64 // ID of the current job being executed
+	JobsRunning       int // amount of jobs in the queue
+}
+
 func NewWorkerNode(id string, masterAddr string, masterPort int) *WorkerNode {
 	ctx, cancel := context.WithCancel(context.Background())
 	
@@ -58,7 +58,7 @@ func NewWorkerNode(id string, masterAddr string, masterPort int) *WorkerNode {
 		ctx:       ctx,
 		cancel:    cancel,
 		masterAddress: masterAddr,
-		masterPort: masterPort
+		masterPort: masterPort,
 	}
 
 	return worker
@@ -174,12 +174,12 @@ func (w *WorkerNode) registerWithMaster() {
 	msg := Message{
 		Type: MsgTypeRegister,
 		WorkerID: w.ID,
-		TimeStamp: time.Now()
+		TimeStamp: time.Now(),
 		Payload: RegisterPayload{
 			WorkerID: w.ID,
 			Address: w.Address,
 			Port: w.Port,
-		}
+		},
 	}
 
 	for {
@@ -218,13 +218,13 @@ func (w *WorkerNode) sendHeartbeat() {
 	msg := Message{
 		Type: MessageTypeHeartbeat,
 		WorkerID: w.ID,
-		TimeStamp: time.Now()
+		TimeStamp: time.Now(),
 		Payload: HeartbeatPayload{
 			Available: w.available,
 			CurrentJobID: w.currentJobID,
 			CPUUsage: getCPUUsage(),
 			MemoryUsage: getMemoryUsage()
-		}
+		},
 	}
 
 	w.mu.RUnlock()

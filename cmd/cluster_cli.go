@@ -3,9 +3,10 @@ package cmd
 import (
 	"fmt"
 	"github.com/spf13/cobra"
-	"legion/cluster/master"
-	"legion/cluster/cluster"
+	. "heapscheduler/cluster"
 )
+
+var master *MasterNode
 
 // command does nothing, shows help text
 var clusterCmd = &cobra.Command{
@@ -46,6 +47,7 @@ var workerStatusesCmd = &cobra.Command{
 
 func ShowClusterStatus() {
 	// todo once master and worker are complete
+	fmt.Printf("WIP")
 }
 
 func ShowMasterStatus() {
@@ -60,9 +62,8 @@ func ShowMasterStatus() {
 	}
 
 	fmt.Printf("===== Master Node Status =====")
-	fmt.Printf("Node ID: %s\n", masterStatus.ID)
-	fmt.Printf("CPU Utilization: %.1f%%\n", masterStatus.CPUUtilization)
-	fmt.Printf("Memory Utilization: %.1f%%\n", masterStatus.MemoryUtilization)
+	fmt.Printf("CPU Utilization: %.2f%%\n", masterStatus.CPUUtilization)
+	fmt.Printf("Memory Utilization: %.2f%%\n", masterStatus.MemoryUtilization)
 	fmt.Printf("Jobs Running: %d\n", masterStatus.JobsRunning)
 	fmt.Printf("Jobs Pending: %d\n", masterStatus.JobsPending)
 	fmt.Printf("==============================")
@@ -73,16 +74,20 @@ func ShowWorkerStatuses() {
 		fmt.Println("Fetching master node status...")
 	}
 	
-	workerStatuses, err := cluster.getAllWorkerStatuses()
+	workerStatuses, err := master.GetAllWorkerStatuses()
 	if err != nil {
 		fmt.Printf("Error getting master status: %v\n", err)
 		return
 	}
-	// todo
-	// create a method somewhere that retrieves statuses of all active workers (calls getWorkerStatus() on all the workers)
-	// output all the statuses
-}
 
+	fmt.Printf("===== Worker Node Status =====\n")
+	for _, status := range workerStatuses {
+		fmt.Printf("Worker ID %d: CPU: %.2f, Memory Utilization: %.2f, Available: %t, Last Seen: %s, Jobs Running: %d\n",
+			status.ID, status.CPUUtilization, status.MemoryUtilization, status.Available, status.LastSeen, status.JobsRunning)
+	}
+	fmt.Printf("==============================")
+
+}
 
 func init() {
 	rootCLI.AddCommand(clusterCmd)
