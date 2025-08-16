@@ -13,7 +13,6 @@ import (
 
 type Cluster struct {
 	masterNode *MasterNode
-	workers    map[string]*WorkerNode
 	server     *http.Server
 	mu         sync.RWMutex
 }
@@ -35,7 +34,8 @@ func (c *Cluster) Start() error {
 
 	// Setup HTTP server
 	router := mux.NewRouter()
-	router.HandleFunc("/jobs", c.handleSubmitJob).Methods("POST")
+	router.HandleFunc("/jobs/add", c.handleSubmitJob).Methods("POST")
+	router.handleFunc("/jobs/cancel", c.handleCancelJob).Methods("PUT")
 	router.HandleFunc("/jobs/{id}", c.handleGetJob).Methods("GET")
 	router.HandleFunc("/jobs", c.handleListJobs).Methods("GET")
 	router.HandleFunc("/cluster/status", c.handleClusterStatus).Methods("GET")
@@ -62,6 +62,19 @@ func (c *Cluster) handleSubmitJob(w http.ResponseWriter, r *http.Request) {
 	if !addedJob {
 		http.Error(w, "Failed to add job", http.StatusInternalServerError)
 		return
+	}
+}
+
+func (c *Cluster) handleCancelJob(w http.ResponseWriter, r *http.Request) {
+	var job Job
+	if err := json.NewDecoder(r.Body).Decode(&job); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	removedJob := c.masterNode.CancelJob(job)
+	if !removedJob {
+		http.Error(w, "Failed to cancel job", http.StatusInternalServerError)
 	}
 }
 

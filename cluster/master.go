@@ -345,6 +345,16 @@ func (m *MasterNode) CancelJob(id uint64) bool {
 		return false
 	}
 
+	// Find all the workers that are running specified job
+	for _, worker := range m.jobMap {
+		if worker.currentJobID == id {
+			err := m.cancelJobOnWorker(job, worker)
+			if err != nil {
+				return False
+			}
+		}
+	}
+
 	return true
 }
 
@@ -501,6 +511,21 @@ func (m *MasterNode) assignJobToWorker(job *Job, worker *WorkerNode) error {
 
 	return m.sendMessageToWorker(url, msg)
 
+}
+
+func (m *MasterNode) cancelJobOnWorker(job *Job, worker *WorkerNode) error {
+	url := fmt.Sprintf("http://%s:%d/job/cancel", worker.Address, worker.Port)
+
+	msg := Message{
+		Type: MessageTypeJobCancel,
+		WorkerID: worker.ID,
+		TimeStamp: time.Now(),
+		Payload: JobAssignPayload{
+			Job: job,
+		},
+	}
+
+	return m.sendMessageToWorker(url, msg)
 }
 
 func (m *MasterNode) sendMessageToWorker(url string, msg Message) error {
