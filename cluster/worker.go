@@ -1,14 +1,15 @@
 package cluster
 
 import (
-	"time"
-	"sync"
 	"context"
-	"net/http"
-	"log"
-	"fmt"
+	"crypto/tls"
 	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	. "heapscheduler/jobs"
 )
@@ -35,7 +36,7 @@ type WorkerNode struct {
 	masterPort 	  int
 }
 
-func NewWorkerNode(id string, masterAddr string, masterPort int) *WorkerNode {
+func NewWorkerNode(id string, masterAddr string) *WorkerNode {
 	ctx, cancel := context.WithCancel(context.Background())
 	
 	// Get local IP address
@@ -50,7 +51,7 @@ func NewWorkerNode(id string, masterAddr string, masterPort int) *WorkerNode {
 		ctx:       ctx,
 		cancel:    cancel,
 		masterAddress: masterAddr,
-		masterPort: masterPort, 
+		masterPort: 9090, 
 	}
 
 	return worker
@@ -75,8 +76,11 @@ func (w *WorkerNode) startWorkerServer() {
 	mux.HandleFunc("/job/cancel", w.handleJobCancel)
 
 	server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", w.Port),
+		Addr:    ":9090",
 		Handler: mux,
+		TLSConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		},
 	}
 
 	log.Printf("Worker %s server starting on :%d", w.ID, w.Port)

@@ -3,6 +3,7 @@ package cluster
 import (
 	"container/heap"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -29,7 +30,7 @@ type MasterNode struct {
 	cancel   context.CancelFunc
 }
 
-func NewMasterNode(dbURL string, address string, port int) *MasterNode {
+func NewMasterNode(dbURL string, address string) *MasterNode {
 	if dbURL == "" {
 		log.Println("Connection string is empty, using default settings")
 		return nil
@@ -53,7 +54,7 @@ func NewMasterNode(dbURL string, address string, port int) *MasterNode {
 		jobMap:   make(map[uint64]*Job),
 		db:       pool,
 		address: address,
-		port: port,
+		port: 9090,
 	}
 }
 
@@ -82,9 +83,12 @@ func (m *MasterNode) StartCommunicationServer() {
 	mux.HandleFunc("/worker/heartbeat", m.handleHeartBeat)
 	mux.HandleFunc("/worker/job-complete", m.handleJobComplete)
 
-	server := &http.Server{
+	server := &http.Server{ // HTTPS server
 		Addr:    ":9090", // Worker communication port
 		Handler: mux,
+		TLSConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12, // Force TLS 1.2 or higher
+		},
 	}
 
 	log.Println("Master communication server starting on :9090")
@@ -114,7 +118,7 @@ func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request
 
 	// Create or update worker
 	if _, exists := m.workers[workerID]; !exists { // If workerID does not exist in Workers
-		worker := NewWorkerNode(workerID, m.address, m.port) // Remember, not part of WorkerNode implementation, only used for MasterNode
+		worker := NewWorkerNode(workerID, m.address) // Remember, not part of WorkerNode implementation, only used for MasterNode
 		m.workers[workerID] = worker
 		log.Printf("Worker %s registered from %s:%d", workerID, address, port)
 	} else {

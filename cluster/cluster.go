@@ -18,7 +18,7 @@ type Cluster struct {
 }
 
 func NewCluster(dbURL string) *Cluster {
-	master := NewMasterNode(dbURL, getLocalIP(), 9081)
+	master := NewMasterNode(dbURL, getLocalIP())
 	
 	return &Cluster{
 		masterNode: master,
