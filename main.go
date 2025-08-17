@@ -32,8 +32,8 @@ Use the --mode flag to specify which service type to run.`,
 		
 		switch mode {
 		case "master":
-			master := NewMasterNode("testSQLServer")
-			master.Start()
+			cluster := NewCluster("...")
+			cluster.Start()
 		case "worker":
 			worker := NewWorkerNode()
 			worker.Start()
