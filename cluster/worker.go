@@ -128,7 +128,7 @@ func (w *WorkerNode) ExecuteJob(job *Job) {
 		log.Printf("Encountered the following error: %s", err)
 	}
 
-	log.Printf(result)
+	log.Printf("Result: %s", result)
 
 	// Report back to master
 	// w.master.OnJobCompleted(job.ID, result, err)
