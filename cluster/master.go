@@ -28,6 +28,7 @@ type MasterNode struct {
 	mu       sync.Mutex
 	ctx      context.Context
 	cancel   context.CancelFunc
+	httpsClient *http.Client
 }
 
 func NewMasterNode(dbURL string, address string) *MasterNode {
@@ -539,14 +540,21 @@ func (m *MasterNode) cancelJobOnWorker(job *Job, worker *WorkerNode) error {
 }
 
 func (m *MasterNode) sendMessageToWorker(url string, msg Message) error {
-	client := &http.Client{Timeout: 5 * time.Second}
+	m.httpsClient = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	}
 
 	jsonData, err := json.Marshal(msg)
 	if err != nil {
 		return err
 	}
 
-	resp, err := client.Post(url, "application/json", strings.NewReader(string(jsonData)))
+	resp, err := m.httpsClient.Post(url, "application/json", strings.NewReader(string(jsonData)))
 	if err != nil {
 		return err
 	}

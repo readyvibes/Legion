@@ -34,6 +34,7 @@ type WorkerNode struct {
 	cancel        context.CancelFunc
 	masterAddress string
 	masterPort 	  int
+	httpsClient   *http.Client
 }
 
 func NewWorkerNode(id string, masterAddr string) *WorkerNode {
@@ -195,14 +196,21 @@ func (w *WorkerNode) registerWithMaster() {
 }
 
 func (w *WorkerNode) sendMessageToMaster(url string, msg Message) error {
-	client := &http.Client{Timeout: 5 * time.Second}
+	w.httpsClient = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	}
 	
 	jsonData, err := json.Marshal(msg)
 	if err != nil {
 		return err
 	}
 
-	resp, err := client.Post(url, "application/json", 
+	resp, err := w.httpsClient.Post(url, "application/json", 
 		strings.NewReader(string(jsonData)))
 	if err != nil {
 		return err
