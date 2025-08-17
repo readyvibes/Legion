@@ -93,7 +93,7 @@ func (m *MasterNode) Start() error {
 }
 
 func (m *MasterNode) initHTTPSClient() error {
-	certFile, err := os.Open("myfile.txt")
+	certFile, err := os.Open("/etc/ssl/ca.cert")
     if err != nil {
         // Handle error
     }
@@ -136,7 +136,7 @@ func (m *MasterNode) StartCommunicationServer() {
 	}
 
 	log.Println("Master communication server starting on :9090")
-	if err := server.ListenAndServeTLS("master.crt", "master.key"); err != nil {
+	if err := server.ListenAndServeTLS("/etc/ssl/certs/master.crt", "/etc/ssl/private/master.key"); err != nil {
 		log.Printf("Communication server error: %v", err)
 	}
 }
@@ -162,7 +162,7 @@ func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request
 
 	// Create or update worker
 	if _, exists := m.workers[workerID]; !exists { // If workerID does not exist in Workers
-		worker := NewWorkerNode(workerID, m.address) // Remember, not part of WorkerNode implementation, only used for MasterNode
+		worker := NewWorkerNode() // Remember, not part of WorkerNode implementation, only used for MasterNode
 		m.workers[workerID] = worker
 		log.Printf("Worker %s registered from %s:%d", workerID, address, port)
 	} else {

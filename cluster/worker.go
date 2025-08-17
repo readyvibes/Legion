@@ -13,6 +13,7 @@ import (
 	"time"
 	"os"
 	"io"
+	"github.com/google/uuid"
 
 
 	. "heapscheduler/jobs"
@@ -36,34 +37,32 @@ type WorkerNode struct {
 	mu            sync.RWMutex
 	ctx           context.Context
 	cancel        context.CancelFunc
-	masterAddress string
-	masterPort 	  int
 	httpsClient   *http.Client
 }
 
-func NewWorkerNode(id string, masterAddr string) *WorkerNode {
+func NewWorkerNode() *WorkerNode {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	id := uuid.New()
 	
 	// Get local IP address
 	localAddr := getLocalIP()
 
 	worker := &WorkerNode{
-		ID:        id,
+		ID:        id.String(),
 		Address:   localAddr,
 		Port:      8091 + len(id), // Port can be set later if needed
 		available: true,
 		lastSeen:  time.Now(),
 		ctx:       ctx,
 		cancel:    cancel,
-		masterAddress: masterAddr,
-		masterPort: 9090, 
 	}
 
 	return worker
 }
 
 func (w *WorkerNode) initHTTPSClient() error {
-	certFile, err := os.Open("myfile.txt")
+	certFile, err := os.Open("/etc/ssl/ca.cert")
     if err != nil {
         // Handle error
     }
@@ -100,9 +99,7 @@ func (w *WorkerNode) Start() error {
 	w.ctx, w.cancel = context.WithCancel(context.Background()) 
 
 	go w.startWorkerServer()
-
 	go w.registerWithMaster()
-
 	go w.heartbeatLoop()
 
 	return nil
@@ -122,7 +119,7 @@ func (w *WorkerNode) startWorkerServer() {
 	}
 
 	log.Printf("Worker %s server starting on :%d", w.ID, w.Port)
-	if err := server.ListenAndServeTLS("worker.crt", "worker.key"); err != nil {
+	if err := server.ListenAndServeTLS("/etc/ssl/certs/worker.crt", "/etc/ssl/private/worker.key"); err != nil {
 		log.Printf("Worker server error: %v", err)
 	}
 }
@@ -208,7 +205,7 @@ func (w *WorkerNode) handleJobCancel(writer http.ResponseWriter, r *http.Request
 func (w *WorkerNode) registerWithMaster() {
 	time.Sleep(2 * time.Second) // Wait for server to start
 
-	url := fmt.Sprintf("http://%s:%d/worker/register", w.masterAddress, w.masterPort)
+	url := "http://master.cluster.local:9090/worker/register"
 
 	msg := Message{
 		Type: MessageTypeRegister,
@@ -258,7 +255,7 @@ func (w *WorkerNode) sendMessageToMaster(url string, msg Message) error {
 }
 
 func (w *WorkerNode) sendHeartbeat() {
-	url := fmt.Sprintf("http://%s:%d/worker/heartbeat", w.masterAddress, w.masterPort)
+	url := "http://master.cluster.local:9090/worker/register"
 
 	w.mu.RLock()
 	msg := Message{
@@ -312,9 +309,7 @@ func (w *WorkerNode) heartbeatLoop() {
 		case <-w.ctx.Done():
 			return
 		case <-ticker.C:
-			w.mu.Lock()
-			w.lastSeen = time.Now()
-			w.mu.Unlock()
+			w.sendHeartbeat()
 		}
 	}
 }

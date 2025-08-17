@@ -31,6 +31,40 @@ if [ "$1" = "master" ]; then
     echo "Master certificates installed in /etc/ssl/certs/"
     echo "Copy ca.crt to worker nodes"
 
+    sudo apt update
+    sudo apt install dnsmasq -y
+
+    # Configure dnsmasq
+    sudo tee /etc/dnsmasq.conf > /dev/null <<EOF
+    # Listen on all interfaces
+    interface=ens4
+    bind-interfaces
+
+    # DNS settings
+    domain=cluster.local
+    expand-hosts
+
+    # Master node DNS record
+    address=/master.cluster.local/$(hostname -I | awk '{print $1}')
+
+    # DHCP range (optional)
+    dhcp-range=10.128.0.100,10.128.0.200,24h
+
+    # Log queries (for debugging)
+    log-queries
+EOF
+
+    # Restart dnsmasq
+    sudo systemctl restart dnsmasq
+    sudo systemctl enable dnsmasq
+
+    # Configure system to use local dnsmasq
+    echo "nameserver 127.0.0.1" | sudo tee /etc/resolv.conf.new
+    echo "search cluster.local" | sudo tee -a /etc/resolv.conf.new
+    sudo mv /etc/resolv.conf.new /etc/resolv.conf
+
+    echo "DNS configured to use local dnsmasq"
+
 elif [ "$1" = "worker" ]; then
     echo "Setting up certificates for WORKER node"
     
