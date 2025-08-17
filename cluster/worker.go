@@ -8,6 +8,7 @@ import (
 	"log"
 	"fmt"
 	"encoding/json"
+	"strings"
 
 	. "heapscheduler/jobs"
 )
@@ -44,25 +45,24 @@ func NewWorkerNode(id string, masterAddr string, masterPort int) *WorkerNode {
 		ID:        id,
 		Address:   localAddr,
 		Port:      8091 + len(id), // Port can be set later if needed
-		master:    master,
 		available: true,
 		lastSeen:  time.Now(),
 		ctx:       ctx,
 		cancel:    cancel,
 		masterAddress: masterAddr,
-		masterPort: masterPort
+		masterPort: masterPort, 
 	}
 
 	return worker
 }
 
-func (w *Worker) Start() error {
+func (w *WorkerNode) Start() error {
 
-	m.ctx, m.cancel = context.WithCancel(context.Background()) 
+	w.ctx, w.cancel = context.WithCancel(context.Background()) 
 
 	go w.startWorkerServer()
 
-	go w.register.registerWithMaster()
+	go w.registerWithMaster()
 
 	go w.heartbeatLoop()
 
@@ -124,9 +124,14 @@ func (w *WorkerNode) ExecuteJob(job *Job) {
 
 	// Simulate job execution
 	result, err := w.executeCommand(job.Command)
+	if err != nil {
+		log.Printf("Encountered the following error: %s", err)
+	}
+
+	log.Printf(result)
 
 	// Report back to master
-	w.master.OnJobCompleted(job.ID, result, err)
+	// w.master.OnJobCompleted(job.ID, result, err)
 }
 
 func (w *WorkerNode) executeCommand(command string) (string, error) {
@@ -164,14 +169,14 @@ func (w *WorkerNode) registerWithMaster() {
 	url := fmt.Sprintf("http://%s:%d/worker/register", w.masterAddress, w.masterPort)
 
 	msg := Message{
-		Type: MsgTypeRegister,
+		Type: MessageTypeRegister,
 		WorkerID: w.ID,
-		TimeStamp: time.Now()
+		TimeStamp: time.Now(),
 		Payload: RegisterPayload{
 			WorkerID: w.ID,
 			Address: w.Address,
 			Port: w.Port,
-		}
+		},
 	}
 
 	for {
@@ -210,13 +215,13 @@ func (w *WorkerNode) sendHeartbeat() {
 	msg := Message{
 		Type: MessageTypeHeartbeat,
 		WorkerID: w.ID,
-		TimeStamp: time.Now()
+		TimeStamp: time.Now(),
 		Payload: HeartbeatPayload{
 			Available: w.available,
-			CurrentJobID: w.currentJobID,
+			CurrentJob: w.currentJobID,
 			CPUUsage: getCPUUsage(),
-			MemoryUsage: getMemoryUsage()
-		}
+			MemoryUsage: getMemoryUsage(),
+		},
 	}
 
 	w.mu.RUnlock()

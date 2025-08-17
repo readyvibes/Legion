@@ -18,6 +18,8 @@ import (
 )
 
 type MasterNode struct {
+	address  string
+	port     int 
 	db      *pgxpool.Pool
 	jobQueue *JobQueue
 	jobMap   map[uint64]*Job // Add a map for fast lookup	
@@ -27,7 +29,7 @@ type MasterNode struct {
 	cancel   context.CancelFunc
 }
 
-func NewMasterNode(dbURL string) *MasterNode {
+func NewMasterNode(dbURL string, address string, port int) *MasterNode {
 	if dbURL == "" {
 		log.Println("Connection string is empty, using default settings")
 		return nil
@@ -50,6 +52,8 @@ func NewMasterNode(dbURL string) *MasterNode {
 		jobQueue: &h,
 		jobMap:   make(map[uint64]*Job),
 		db:       pool,
+		address: address,
+		port: port,
 	}
 }
 
@@ -110,7 +114,7 @@ func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request
 
 	// Create or update worker
 	if _, exists := m.workers[workerID]; !exists { // If workerID does not exist in Workers
-		worker := NewWorkerNode(workerID, m) 
+		worker := NewWorkerNode(workerID, m.address, m.port) // Remember, not part of WorkerNode implementation, only used for MasterNode
 		m.workers[workerID] = worker
 		log.Printf("Worker %s registered from %s:%d", workerID, address, port)
 	} else {
@@ -346,11 +350,13 @@ func (m *MasterNode) CancelJob(id uint64) bool {
 	}
 
 	// Find all the workers that are running specified job
-	for _, worker := range m.jobMap {
-		if worker.currentJobID == id {
-			err := m.cancelJobOnWorker(job, worker)
-			if err != nil {
-				return False
+	for _, job := range m.jobMap {
+		for _, worker := range m.workers {
+			if worker.currentJobID == job.ID {
+				err := m.cancelJobOnWorker(job, worker)
+				if err != nil {
+					return false
+				}
 			}
 		}
 	}
