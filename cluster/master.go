@@ -34,7 +34,15 @@ type MasterNode struct {
 	httpsClient *http.Client
 }
 
-func NewMasterNode(dbURL string, address string) *MasterNode {
+func NewMasterNode(dbURL string, address ...string) *MasterNode {
+	var addr string
+	if len(address) > 0 && address[0] != "" {
+		addr = address[0]
+	} else {
+		addr = getLocalIP()
+	}
+	
+
 	if dbURL == "" {
 		log.Println("Connection string is empty, using default settings")
 		return nil
@@ -57,7 +65,7 @@ func NewMasterNode(dbURL string, address string) *MasterNode {
 		jobQueue: &h,
 		jobMap:   make(map[uint64]*Job),
 		db:       pool,
-		address: address,
+		address: addr,
 		port: 9090,
 	}
 }
