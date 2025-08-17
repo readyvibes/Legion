@@ -4,10 +4,13 @@ import (
 	"container/heap"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -60,6 +63,11 @@ func NewMasterNode(dbURL string, address string) *MasterNode {
 }
 
 func (m *MasterNode) Start() error {
+
+	if err := m.initHTTPSClient(); err != nil {
+		log.Printf("Warning: Failed to initiate HTTPS client: %v", err)
+		return err
+	}
 	
 	m.ctx, m.cancel = context.WithCancel(context.Background())
 	
@@ -76,6 +84,33 @@ func (m *MasterNode) Start() error {
 	return nil
 }
 
+func (m *MasterNode) initHTTPSClient() error {
+	certFile, err := os.Open("myfile.txt")
+    if err != nil {
+        // Handle error
+    }
+    defer certFile.Close()
+
+    caCert, err := io.ReadAll(certFile)
+    if err != nil {
+        // Handle error
+		log.Fatalf("Error with loading Certificate Authority Cert: %s", err)
+    }
+
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCert)
+
+	m.httpsClient = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs: caCertPool,
+				MinVersion: tls.VersionTLS12,
+			},
+		},
+	}
+	return nil
+}
 
 func (m *MasterNode) StartCommunicationServer() {
 
@@ -540,15 +575,6 @@ func (m *MasterNode) cancelJobOnWorker(job *Job, worker *WorkerNode) error {
 }
 
 func (m *MasterNode) sendMessageToWorker(url string, msg Message) error {
-	m.httpsClient = &http.Client{
-		Timeout: 5 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-		},
-	}
-
 	jsonData, err := json.Marshal(msg)
 	if err != nil {
 		return err

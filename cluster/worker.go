@@ -4,12 +4,16 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"crypto/x509"
 	"fmt"
 	"log"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+	"os"
+	"io"
+
 
 	. "heapscheduler/jobs"
 )
@@ -58,7 +62,40 @@ func NewWorkerNode(id string, masterAddr string) *WorkerNode {
 	return worker
 }
 
+func (w *WorkerNode) initHTTPSClient() error {
+	certFile, err := os.Open("myfile.txt")
+    if err != nil {
+        // Handle error
+    }
+    defer certFile.Close()
+
+    caCert, err := io.ReadAll(certFile)
+    if err != nil {
+        // Handle error
+		log.Fatalf("Error with loading Certificate Authority Cert: %s", err)
+    }
+
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCert)
+
+	w.httpsClient = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs: caCertPool,
+				MinVersion: tls.VersionTLS12,
+			},
+		},
+	}
+	return nil
+}
+
 func (w *WorkerNode) Start() error {
+
+	if err := w.initHTTPSClient(); err != nil {
+		log.Printf("Warning: Failed to initiate HTTPS client: %v", err)
+		return err
+	}
 
 	w.ctx, w.cancel = context.WithCancel(context.Background()) 
 
