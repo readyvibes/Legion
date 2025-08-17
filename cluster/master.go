@@ -92,7 +92,7 @@ func (m *MasterNode) StartCommunicationServer() {
 	}
 
 	log.Println("Master communication server starting on :9090")
-	if err := server.ListenAndServe(); err != nil {
+	if err := server.ListenAndServeTLS("master.crt", "master.key"); err != nil {
 		log.Printf("Communication server error: %v", err)
 	}
 }

@@ -75,7 +75,7 @@ func (w *WorkerNode) startWorkerServer() {
 	mux.HandleFunc("/job/assign", w.handleJobAssign)
 	mux.HandleFunc("/job/cancel", w.handleJobCancel)
 
-	server := &http.Server{
+	server := &http.Server{ // HTTPS server
 		Addr:    ":9090",
 		Handler: mux,
 		TLSConfig: &tls.Config{
@@ -84,7 +84,7 @@ func (w *WorkerNode) startWorkerServer() {
 	}
 
 	log.Printf("Worker %s server starting on :%d", w.ID, w.Port)
-	if err := server.ListenAndServe(); err != nil {
+	if err := server.ListenAndServeTLS("worker.crt", "worker.key"); err != nil {
 		log.Printf("Worker server error: %v", err)
 	}
 }
