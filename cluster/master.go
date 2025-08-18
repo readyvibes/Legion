@@ -85,7 +85,7 @@ func (m *MasterNode) Start() error {
 
 	m.logger.Info("Starting HTTPS Client for MasterNode")
 	if err := m.initHTTPSClient(); err != nil {
-		m.logger.Error("Warning: Failed to initiate HTTPS client: %v", err)
+		m.logger.Error("Warning: Failed to initiate HTTPS client")
 		return err
 	}
 	
