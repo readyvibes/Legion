@@ -75,7 +75,9 @@ func NewMasterNode(dbURL string, address ...string) *MasterNode {
 		db:       pool,
 		address: addr,
 		port: 9090,
-		logger: slog.New(slog.NewTextHandler(logFile, nil)),
+		logger: slog.New(slog.NewTextHandler(logFile, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		})),
 	}
 }
 
@@ -109,17 +111,17 @@ func (m *MasterNode) initHTTPSClient() error {
 	certFile, err := os.Open("/etc/ssl/ca.cert")
     if err != nil {
         // Handle error
-		m.logger.Error("Failed to open Certificate Authority Certificate: %s", err)
+		m.logger.Error("Failed to open CA (Certificate Authority) Certificate")
     }
     defer certFile.Close()
 
     caCert, err := io.ReadAll(certFile)
     if err != nil {
         // Handle error
-		m.logger.Error("Error with loading Certificate Authority Cert: %s", err)
+		m.logger.Error("Failed to read CA (Certificate Authority) Certificate")
     }
 
-	m.logger.Info("Setting Up Certificates")
+	m.logger.Info("Loading Certificates")
 	caCertPool := x509.NewCertPool()
 	caCertPool.AppendCertsFromPEM(caCert)
 	m.logger.Info("Completed Certificate Setup")
@@ -139,7 +141,7 @@ func (m *MasterNode) initHTTPSClient() error {
 }
 
 func (m *MasterNode) StartCommunicationServer() {
-
+	m.logger.Info("Setting Up HTTPS Server")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/worker/register", m.handleWorkerRegister)
 	mux.HandleFunc("/worker/heartbeat", m.handleHeartBeat)
@@ -152,11 +154,12 @@ func (m *MasterNode) StartCommunicationServer() {
 			MinVersion: tls.VersionTLS12, // Force TLS 1.2 or higher
 		},
 	}
-
-	log.Println("Master communication server starting on :9090")
+	m.logger.Info("HTTPS Server Setup Completed")
+	
 	if err := server.ListenAndServeTLS("/etc/ssl/certs/master.crt", "/etc/ssl/private/master.key"); err != nil {
 		log.Printf("Communication server error: %v", err)
 	}
+	m.logger.Info("Master HTTPS Server Starting on :9090")
 }
 
 func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request) {
