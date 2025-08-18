@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -32,6 +33,7 @@ type MasterNode struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	httpsClient *http.Client
+	logger 	 *slog.Logger
 }
 
 func NewMasterNode(dbURL string, address ...string) *MasterNode {
@@ -61,30 +63,41 @@ func NewMasterNode(dbURL string, address ...string) *MasterNode {
 	h := JobQueue{}
 	heap.Init(&h)
 
+	logFile, err := os.OpenFile("master.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		panic(err)
+	}
+	defer logFile.Close()
+
 	return &MasterNode{
 		jobQueue: &h,
 		jobMap:   make(map[uint64]*Job),
 		db:       pool,
 		address: addr,
 		port: 9090,
+		logger: slog.New(slog.NewTextHandler(logFile, nil)),
 	}
 }
 
 func (m *MasterNode) Start() error {
 
+	m.logger.Info("Starting HTTPS Client for MasterNode")
 	if err := m.initHTTPSClient(); err != nil {
-		log.Printf("Warning: Failed to initiate HTTPS client: %v", err)
+		m.logger.Error("Warning: Failed to initiate HTTPS client: %v", err)
 		return err
 	}
 	
 	m.ctx, m.cancel = context.WithCancel(context.Background())
 	
 	// Start communication server for workers
+	m.logger.Info("Starting Master Server")
 	go m.StartCommunicationServer() // Lines 73 - 187
 
+	m.logger.Info("Starting Master Scheduler Loop")
 	// Start scheduler loop
 	go m.schedulerLoop() // Lines 189 - 259
 	
+	m.logger.Info("Starting Master Health Monitoring")
 	// Start worker health monitor
 	go m.monitorWorkers() // Lines 261 - 286
 
@@ -96,18 +109,22 @@ func (m *MasterNode) initHTTPSClient() error {
 	certFile, err := os.Open("/etc/ssl/ca.cert")
     if err != nil {
         // Handle error
+		m.logger.Error("Failed to open Certificate Authority Certificate: %s", err)
     }
     defer certFile.Close()
 
     caCert, err := io.ReadAll(certFile)
     if err != nil {
         // Handle error
-		log.Fatalf("Error with loading Certificate Authority Cert: %s", err)
+		m.logger.Error("Error with loading Certificate Authority Cert: %s", err)
     }
 
+	m.logger.Info("Setting Up Certificates")
 	caCertPool := x509.NewCertPool()
 	caCertPool.AppendCertsFromPEM(caCert)
+	m.logger.Info("Completed Certificate Setup")
 
+	m.logger.Info("Initializing HTTPS Client")
 	m.httpsClient = &http.Client{
 		Timeout: 5 * time.Second,
 		Transport: &http.Transport{
@@ -117,6 +134,7 @@ func (m *MasterNode) initHTTPSClient() error {
 			},
 		},
 	}
+	m.logger.Info("Completed HTTPS Client Setup")
 	return nil
 }
 
