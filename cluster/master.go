@@ -209,6 +209,8 @@ func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request
 
 	workerID := payload["worker_id"].(string)
 	address := payload["address"].(string)
+	port := int(payload["port"].(float64))
+	
 
 	m.serverLogger.Info("Received Register From WorkerNode")
 	m.serverLogger.Info("Worker started", slog.String("workerID", workerID))
@@ -216,7 +218,11 @@ func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request
 
 	// Create or update worker
 	if _, exists := m.workers[workerID]; !exists { // If workerID does not exist in Workers
-		worker := NewWorkerNode(address) // Remember, not part of WorkerNode implementation, only used for MasterNode
+		options := WorkerNodeOptions{
+			Address: address,
+			Port: port,
+		}
+		worker := NewWorkerNode(&options) // Remember, not part of WorkerNode implementation, only used for MasterNode
 		m.workers[workerID] = worker
 	} else {
 		// Update existing worker
@@ -233,8 +239,6 @@ func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
-	
-
 }
 
 func (m *MasterNode) handleHeartBeat(w http.ResponseWriter, r *http.Request) {
