@@ -17,8 +17,12 @@ type Cluster struct {
 	mu         sync.RWMutex
 }
 
-func NewCluster(dbURL string) *Cluster {
-	master := NewMasterNode(dbURL, getLocalIP())
+func NewCluster(dbURL string, address string, port int) *Cluster {
+	masterNodeOption := MasterNodeOptions{
+		Address: address,
+		Port: port,
+	}
+	master := NewMasterNode(dbURL, &masterNodeOption)
 	
 	return &Cluster{
 		masterNode: master,
