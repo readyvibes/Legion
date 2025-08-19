@@ -38,20 +38,35 @@ type WorkerNode struct {
 	ctx           context.Context
 	cancel        context.CancelFunc
 	httpsClient   *http.Client
+	masterPort    int 
 }
 
-func NewWorkerNode() *WorkerNode {
+type WorkerNodeOptions struct {
+	Address string
+	Port    int
+}
+
+func NewWorkerNode(option *WorkerNodeOptions) *WorkerNode {
+	addr := "localhost"
+	port := 9090
+
+	if option != nil {
+		if option.Address != "" {
+			addr = option.Address
+		}
+		if option.Port != 0 {
+			port = option.Port
+		}
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	id := uuid.New()
-	
-	// Get local IP address
-	localAddr := getLocalIP()
 
 	worker := &WorkerNode{
 		ID:        id.String(),
-		Address:   localAddr,
-		Port:      8091 + len(id), // Port can be set later if needed
+		Address:   addr,
+		Port:      port, // Port can be set later if needed
 		available: true,
 		lastSeen:  time.Now(),
 		ctx:       ctx,
@@ -205,7 +220,7 @@ func (w *WorkerNode) handleJobCancel(writer http.ResponseWriter, r *http.Request
 func (w *WorkerNode) registerWithMaster() {
 	time.Sleep(2 * time.Second) // Wait for server to start
 
-	url := "http://master.cluster.local:9090/worker/register"
+	url := fmt.Sprintf("http://master.cluster.local:%d/worker/register", w.masterPort)
 
 	msg := Message{
 		Type: MessageTypeRegister,
@@ -251,11 +266,25 @@ func (w *WorkerNode) sendMessageToMaster(url string, msg Message) error {
 	}
 	defer resp.Body.Close()
 
+	// Read and parse response
+	var response map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// Extract master port if present
+	if masterPort, exists := response["master_port"]; exists {
+		if port, ok := masterPort.(float64); ok { // JSON numbers are float64
+			w.masterPort = int(port)
+			log.Printf("Master port received: %d", w.masterPort)
+		}
+	}
+
 	return nil
 }
 
 func (w *WorkerNode) sendHeartbeat() {
-	url := "http://master.cluster.local:9090/worker/register"
+	url := fmt.Sprintf("http://master.cluster.local:%d/worker/register", w.masterPort)
 
 	w.mu.RLock()
 	msg := Message{

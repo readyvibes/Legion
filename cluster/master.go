@@ -23,25 +23,38 @@ import (
 )
 
 type MasterNode struct {
-	address  string
-	port     int 
-	db      *pgxpool.Pool
-	jobQueue *JobQueue
-	jobMap   map[uint64]*Job // Add a map for fast lookup	
-	workers  map[string]*WorkerNode // Workers managed by this master
-	mu       sync.Mutex
-	ctx      context.Context
-	cancel   context.CancelFunc
-	httpsClient *http.Client
-	logger 	 *slog.Logger
+	address          string
+	port             int 
+	db               *pgxpool.Pool
+	jobQueue         *JobQueue
+	jobMap           map[uint64]*Job // Add a map for fast lookup	
+	workers          map[string]*WorkerNode // Workers managed by this master
+	mu               sync.Mutex
+	ctx              context.Context
+	cancel           context.CancelFunc
+	httpsClient      *http.Client
+	logger           *slog.Logger
+	serverLogger 	 *slog.Logger
+	schedulerLogger  *slog.Logger
+	monitorLogger    *slog.Logger
 }
 
-func NewMasterNode(dbURL string, address ...string) *MasterNode {
-	var addr string
-	if len(address) > 0 && address[0] != "" {
-		addr = address[0]
-	} else {
-		addr = getLocalIP()
+type MasterNodeOptions struct {
+	Address string
+	Port 	int
+}
+
+func NewMasterNode(dbURL string, option *MasterNodeOptions) *MasterNode {
+	addr := "localhost"
+	port := 9090
+
+	if option != nil {
+		if option.Address != "" {
+			addr = option.Address
+		}
+		if option.Port != 0 {
+			port = option.Port
+		}
 	}
 	
 
@@ -63,47 +76,66 @@ func NewMasterNode(dbURL string, address ...string) *MasterNode {
 	h := JobQueue{}
 	heap.Init(&h)
 
-	logFile, err := os.OpenFile("master.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	serverLogFile, err := os.OpenFile("master-server.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		panic(err)
 	}
-	defer logFile.Close()
+	defer serverLogFile.Close()
+
+	schedulerLogFile, err := os.OpenFile("master-scheduler.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		panic(err)
+	}
+	defer schedulerLogFile.Close()
+
+	monitorLogFile, err := os.OpenFile("master-monitor.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		panic(err)
+	}
+	defer monitorLogFile.Close()
 
 	return &MasterNode{
 		jobQueue: &h,
 		jobMap:   make(map[uint64]*Job),
 		db:       pool,
-		address: addr,
-		port: 9090,
-		logger: slog.New(slog.NewTextHandler(logFile, &slog.HandlerOptions{
+		address:  addr,
+		port:     port,
+		serverLogger: slog.New(slog.NewTextHandler(serverLogFile, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		})),
+		schedulerLogger: slog.New(slog.NewTextHandler(schedulerLogFile, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		})),
+		monitorLogger: slog.New(slog.NewTextHandler(monitorLogFile, &slog.HandlerOptions{
 			Level: slog.LevelInfo,
 		})),
 	}
 }
 
 func (m *MasterNode) Start() error {
-
-	m.logger.Info("Starting HTTPS Client for MasterNode")
+	m.logger.Info("Setting Up HTTPS Client on Master Host")
 	if err := m.initHTTPSClient(); err != nil {
-		m.logger.Error("Warning: Failed to initiate HTTPS client")
+		m.logger.Error("Failed to Initialize HTTPS Client on Master Host")
 		return err
 	}
+	m.logger.Info("Completed Setup For HTTPS Client on Master Host")
+
 	
 	m.ctx, m.cancel = context.WithCancel(context.Background())
 	
 	// Start communication server for workers
-	m.logger.Info("Starting Master Server")
+	m.serverLogger.Info("Starting Master Server")
 	go m.StartCommunicationServer() // Lines 73 - 187
 
-	m.logger.Info("Starting Master Scheduler Loop")
+	m.schedulerLogger.Info("Starting Master Scheduler Loop")
 	// Start scheduler loop
 	go m.schedulerLoop() // Lines 189 - 259
 	
-	m.logger.Info("Starting Master Health Monitoring")
+	m.monitorLogger.Info("Starting Master Health Monitoring")
 	// Start worker health monitor
 	go m.monitorWorkers() // Lines 261 - 286
 
-	log.Println("Master node started")
+	m.logger.Info("Master node started")
 	return nil
 }
 
@@ -141,7 +173,7 @@ func (m *MasterNode) initHTTPSClient() error {
 }
 
 func (m *MasterNode) StartCommunicationServer() {
-	m.logger.Info("Setting Up HTTPS Server")
+	m.serverLogger.Info("Setting Up HTTPS Server")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/worker/register", m.handleWorkerRegister)
 	mux.HandleFunc("/worker/heartbeat", m.handleHeartBeat)
@@ -154,12 +186,12 @@ func (m *MasterNode) StartCommunicationServer() {
 			MinVersion: tls.VersionTLS12, // Force TLS 1.2 or higher
 		},
 	}
-	m.logger.Info("HTTPS Server Setup Completed")
+	m.serverLogger.Info("HTTPS Server Setup Completed")
 	
 	if err := server.ListenAndServeTLS("/etc/ssl/certs/master.crt", "/etc/ssl/private/master.key"); err != nil {
 		log.Printf("Communication server error: %v", err)
 	}
-	m.logger.Info("Master HTTPS Server Starting on :9090")
+	m.serverLogger.Info("Master HTTPS Server Starting on :9090")
 }
 
 func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request) {
@@ -177,15 +209,15 @@ func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request
 
 	workerID := payload["worker_id"].(string)
 	address := payload["address"].(string)
-	port := int(payload["port"].(float64))
 
+	m.serverLogger.Info("Received Register From WorkerNode")
+	m.serverLogger.Info("Worker started", slog.String("workerID", workerID))
 	m.mu.Lock()
 
 	// Create or update worker
 	if _, exists := m.workers[workerID]; !exists { // If workerID does not exist in Workers
-		worker := NewWorkerNode() // Remember, not part of WorkerNode implementation, only used for MasterNode
+		worker := NewWorkerNode(address) // Remember, not part of WorkerNode implementation, only used for MasterNode
 		m.workers[workerID] = worker
-		log.Printf("Worker %s registered from %s:%d", workerID, address, port)
 	} else {
 		// Update existing worker
 		m.workers[workerID].lastSeen = time.Now()
@@ -193,8 +225,15 @@ func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request
 	}
 
 	m.mu.Unlock()
+
+	response := map[string]interface{} {
+		"status": "registered",
+		"master_port": m.port,
+	}
+
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "registered"})
+	json.NewEncoder(w).Encode(response)
+	
 
 }
 
@@ -573,7 +612,7 @@ func (m *MasterNode) RegisterWorker(worker *WorkerNode) {
 }
 
 func (m *MasterNode) assignJobToWorker(job *Job, worker *WorkerNode) error {
-	url := fmt.Sprintf("http://%s:%d/job/assign", worker.Address, worker.Port)
+	url := fmt.Sprintf("http://%s:9090/job/assign", worker.Address)
 
 	msg := Message{
 		Type: MessageTypeJobAssign,
@@ -589,7 +628,7 @@ func (m *MasterNode) assignJobToWorker(job *Job, worker *WorkerNode) error {
 }
 
 func (m *MasterNode) cancelJobOnWorker(job *Job, worker *WorkerNode) error {
-	url := fmt.Sprintf("http://%s:%d/job/cancel", worker.Address, worker.Port)
+	url := fmt.Sprintf("http://%s:9090/job/cancel", worker.Address)
 
 	msg := Message{
 		Type: MessageTypeJobCancel,
