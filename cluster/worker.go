@@ -3,42 +3,42 @@ package cluster
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
-	"os"
-	"io"
+
 	"github.com/google/uuid"
 
-
-	. "heapscheduler/jobs"
+	. "legion/jobs"
 )
 
 type WorkerStatus struct {
-	ID         string    
-	Available  bool      
-	LastSeen   time.Time 
+	ID         string
+	Available  bool
+	LastSeen   time.Time
 	CurrentJob uint64 // ID of the current job being executed
 }
 
 type WorkerNode struct {
-	ID            string
-	Address       string 
-	Port 	      int 
-	available     bool
-	currentJobID  uint64
-	currentJob    *Job
-	lastSeen      time.Time
-	mu            sync.RWMutex
-	ctx           context.Context
-	cancel        context.CancelFunc
-	httpsClient   *http.Client
-	masterPort    int 
+	ID           string
+	Address      string
+	Port         int
+	available    bool
+	currentJobID uint64
+	currentJob   *Job
+	lastSeen     time.Time
+	mu           sync.RWMutex
+	ctx          context.Context
+	cancel       context.CancelFunc
+	httpsClient  *http.Client
+	masterPort   int
 }
 
 type WorkerNodeOptions struct {
@@ -78,16 +78,16 @@ func NewWorkerNode(option *WorkerNodeOptions) *WorkerNode {
 
 func (w *WorkerNode) initHTTPSClient() error {
 	certFile, err := os.Open("/etc/ssl/ca.cert")
-    if err != nil {
-        // Handle error
-    }
-    defer certFile.Close()
+	if err != nil {
+		// Handle error
+	}
+	defer certFile.Close()
 
-    caCert, err := io.ReadAll(certFile)
-    if err != nil {
-        // Handle error
+	caCert, err := io.ReadAll(certFile)
+	if err != nil {
+		// Handle error
 		log.Fatalf("Error with loading Certificate Authority Cert: %s", err)
-    }
+	}
 
 	caCertPool := x509.NewCertPool()
 	caCertPool.AppendCertsFromPEM(caCert)
@@ -96,7 +96,7 @@ func (w *WorkerNode) initHTTPSClient() error {
 		Timeout: 5 * time.Second,
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				RootCAs: caCertPool,
+				RootCAs:    caCertPool,
 				MinVersion: tls.VersionTLS12,
 			},
 		},
@@ -111,7 +111,7 @@ func (w *WorkerNode) Start() error {
 		return err
 	}
 
-	w.ctx, w.cancel = context.WithCancel(context.Background()) 
+	w.ctx, w.cancel = context.WithCancel(context.Background())
 
 	go w.startWorkerServer()
 	go w.registerWithMaster()
@@ -156,7 +156,7 @@ func (w *WorkerNode) handleJobAssign(writer http.ResponseWriter, r *http.Request
 	var job Job
 	json.Unmarshal(jobData, &job)
 	go w.ExecuteJob(&job)
-	
+
 	writer.WriteHeader(http.StatusOK)
 	json.NewEncoder(writer).Encode(map[string]string{"status": "accepted"})
 }
@@ -191,7 +191,7 @@ func (w *WorkerNode) ExecuteJob(job *Job) {
 func (w *WorkerNode) executeCommand(command string) (string, error) {
 	// Simulate work with sleep
 	time.Sleep(time.Duration(2+len(command)%5) * time.Second)
-	
+
 	// Simulate occasional failures
 	if len(command)%7 == 0 {
 		return "", fmt.Errorf("simulated job failure")
@@ -206,7 +206,7 @@ func (w *WorkerNode) handleJobCancel(writer http.ResponseWriter, r *http.Request
 		// Stop Job Function Below
 		// {Insert Here}
 
-		w.currentJob = nil 
+		w.currentJob = nil
 		w.currentJobID = 0
 		w.available = true
 	}
@@ -214,7 +214,7 @@ func (w *WorkerNode) handleJobCancel(writer http.ResponseWriter, r *http.Request
 	w.mu.Unlock()
 
 	writer.WriteHeader(http.StatusOK)
-	json.NewEncoder(writer).Encode(map[string]string{"status":"cancelled"})
+	json.NewEncoder(writer).Encode(map[string]string{"status": "cancelled"})
 }
 
 func (w *WorkerNode) registerWithMaster() {
@@ -223,13 +223,13 @@ func (w *WorkerNode) registerWithMaster() {
 	url := fmt.Sprintf("http://master.cluster.local:%d/worker/register", w.masterPort)
 
 	msg := Message{
-		Type: MessageTypeRegister,
-		WorkerID: w.ID,
+		Type:      MessageTypeRegister,
+		WorkerID:  w.ID,
 		TimeStamp: time.Now(),
 		Payload: RegisterPayload{
 			WorkerID: w.ID,
-			Address: w.Address,
-			Port: w.Port,
+			Address:  w.Address,
+			Port:     w.Port,
 		},
 	}
 
@@ -253,13 +253,13 @@ func (w *WorkerNode) sendMessageToMaster(url string, msg Message) error {
 			},
 		},
 	}
-	
+
 	jsonData, err := json.Marshal(msg)
 	if err != nil {
 		return err
 	}
 
-	resp, err := w.httpsClient.Post(url, "application/json", 
+	resp, err := w.httpsClient.Post(url, "application/json",
 		strings.NewReader(string(jsonData)))
 	if err != nil {
 		return err
@@ -288,13 +288,13 @@ func (w *WorkerNode) sendHeartbeat() {
 
 	w.mu.RLock()
 	msg := Message{
-		Type: MessageTypeHeartbeat,
-		WorkerID: w.ID,
+		Type:      MessageTypeHeartbeat,
+		WorkerID:  w.ID,
 		TimeStamp: time.Now(),
 		Payload: HeartbeatPayload{
-			Available: w.available,
-			CurrentJob: w.currentJobID,
-			CPUUsage: getCPUUsage(),
+			Available:   w.available,
+			CurrentJob:  w.currentJobID,
+			CPUUsage:    getCPUUsage(),
 			MemoryUsage: getMemoryUsage(),
 		},
 	}

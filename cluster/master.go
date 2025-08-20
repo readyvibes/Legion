@@ -16,32 +16,32 @@ import (
 	"sync"
 	"time"
 
-	. "heapscheduler/jobs"
-	. "heapscheduler/priorityqueue"
+	. "legion/jobs"
+	. "legion/priorityqueue"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type MasterNode struct {
-	address          string
-	port             int 
-	db               *pgxpool.Pool
-	jobQueue         *JobQueue
-	jobMap           map[uint64]*Job // Add a map for fast lookup	
-	workers          map[string]*WorkerNode // Workers managed by this master
-	mu               sync.Mutex
-	ctx              context.Context
-	cancel           context.CancelFunc
-	httpsClient      *http.Client
-	logger           *slog.Logger
-	serverLogger 	 *slog.Logger
-	schedulerLogger  *slog.Logger
-	monitorLogger    *slog.Logger
+	address         string
+	port            int
+	db              *pgxpool.Pool
+	jobQueue        *JobQueue
+	jobMap          map[uint64]*Job        // Add a map for fast lookup
+	workers         map[string]*WorkerNode // Workers managed by this master
+	mu              sync.Mutex
+	ctx             context.Context
+	cancel          context.CancelFunc
+	httpsClient     *http.Client
+	logger          *slog.Logger
+	serverLogger    *slog.Logger
+	schedulerLogger *slog.Logger
+	monitorLogger   *slog.Logger
 }
 
 type MasterNodeOptions struct {
 	Address string
-	Port 	int
+	Port    int
 }
 
 func NewMasterNode(dbURL string, option *MasterNodeOptions) *MasterNode {
@@ -56,12 +56,11 @@ func NewMasterNode(dbURL string, option *MasterNodeOptions) *MasterNode {
 			port = option.Port
 		}
 	}
-	
 
 	if dbURL == "" {
 		log.Println("Connection string is empty, using default settings")
 		return nil
-	}	
+	}
 
 	poolConfig, err := pgxpool.ParseConfig(dbURL)
 	if err != nil {
@@ -120,9 +119,8 @@ func (m *MasterNode) Start() error {
 	}
 	m.logger.Info("Completed Setup For HTTPS Client on Master Host")
 
-	
 	m.ctx, m.cancel = context.WithCancel(context.Background())
-	
+
 	// Start communication server for workers
 	m.serverLogger.Info("Starting Master Server")
 	go m.StartCommunicationServer() // Lines 73 - 187
@@ -130,7 +128,7 @@ func (m *MasterNode) Start() error {
 	m.schedulerLogger.Info("Starting Master Scheduler Loop")
 	// Start scheduler loop
 	go m.schedulerLoop() // Lines 189 - 259
-	
+
 	m.monitorLogger.Info("Starting Master Health Monitoring")
 	// Start worker health monitor
 	go m.monitorWorkers() // Lines 261 - 286
@@ -141,17 +139,17 @@ func (m *MasterNode) Start() error {
 
 func (m *MasterNode) initHTTPSClient() error {
 	certFile, err := os.Open("/etc/ssl/ca.cert")
-    if err != nil {
-        // Handle error
+	if err != nil {
+		// Handle error
 		m.logger.Error("Failed to open CA (Certificate Authority) Certificate")
-    }
-    defer certFile.Close()
+	}
+	defer certFile.Close()
 
-    caCert, err := io.ReadAll(certFile)
-    if err != nil {
-        // Handle error
+	caCert, err := io.ReadAll(certFile)
+	if err != nil {
+		// Handle error
 		m.logger.Error("Failed to read CA (Certificate Authority) Certificate")
-    }
+	}
 
 	m.logger.Info("Loading Certificates")
 	caCertPool := x509.NewCertPool()
@@ -163,7 +161,7 @@ func (m *MasterNode) initHTTPSClient() error {
 		Timeout: 5 * time.Second,
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				RootCAs: caCertPool,
+				RootCAs:    caCertPool,
 				MinVersion: tls.VersionTLS12,
 			},
 		},
@@ -187,7 +185,7 @@ func (m *MasterNode) StartCommunicationServer() {
 		},
 	}
 	m.serverLogger.Info("HTTPS Server Setup Completed")
-	
+
 	if err := server.ListenAndServeTLS("/etc/ssl/certs/master.crt", "/etc/ssl/private/master.key"); err != nil {
 		log.Printf("Communication server error: %v", err)
 	}
@@ -210,7 +208,6 @@ func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request
 	workerID := payload["worker_id"].(string)
 	address := payload["address"].(string)
 	port := int(payload["port"].(float64))
-	
 
 	m.serverLogger.Info("Received Register From WorkerNode")
 	m.serverLogger.Info("Worker started", slog.String("workerID", workerID))
@@ -220,7 +217,7 @@ func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request
 	if _, exists := m.workers[workerID]; !exists { // If workerID does not exist in Workers
 		options := WorkerNodeOptions{
 			Address: address,
-			Port: port,
+			Port:    port,
 		}
 		worker := NewWorkerNode(&options) // Remember, not part of WorkerNode implementation, only used for MasterNode
 		m.workers[workerID] = worker
@@ -232,8 +229,8 @@ func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request
 
 	m.mu.Unlock()
 
-	response := map[string]interface{} {
-		"status": "registered",
+	response := map[string]interface{}{
+		"status":      "registered",
 		"master_port": m.port,
 	}
 
@@ -252,7 +249,7 @@ func (m *MasterNode) handleHeartBeat(w http.ResponseWriter, r *http.Request) {
 
 	if worker, exists := m.workers[msg.WorkerID]; exists {
 		worker.lastSeen = time.Now()
-		
+
 		if payload, ok := msg.Payload.(map[string]interface{}); ok {
 			worker.available = payload["available"].(bool)
 			if jobID, exists := payload["current_job_id"]; exists && jobID != nil {
@@ -270,7 +267,7 @@ func (m *MasterNode) handleHeartBeat(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *MasterNode) handleJobComplete(w http.ResponseWriter, r *http.Request) {
-	var msg Message 
+	var msg Message
 	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 	}
@@ -453,7 +450,7 @@ func (m *MasterNode) CancelJob(id uint64) bool {
 		return false // Job not found or invalid index
 	}
 	heap.Remove(m.jobQueue, job.Index) // Remove from Priority Queue
-	delete(m.jobMap, id)                // Remove from jobMap
+	delete(m.jobMap, id)               // Remove from jobMap
 
 	// Update status in database
 	if err := m.updateJobStatusInDB(id, StatusCancelled); err != nil {
@@ -477,7 +474,6 @@ func (m *MasterNode) CancelJob(id uint64) bool {
 }
 
 // Utility
-
 
 // Update Job Priority
 func (m *MasterNode) UpdateJobPriority(id uint64, newPriority int) bool {
@@ -521,7 +517,7 @@ func (m *MasterNode) updateJobPriorityInDB(id uint64, newPriority int) error {
 func (m *MasterNode) ListJobs() ([]*Job, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	jobs := make([]*Job, 0, len(m.jobMap))
 	for _, job := range m.jobMap {
 		jobs = append(jobs, job)
@@ -610,7 +606,7 @@ func (m *MasterNode) OnJobCompleted(jobID uint64, result string, err error) {
 func (m *MasterNode) RegisterWorker(worker *WorkerNode) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.workers[worker.ID] = worker
 	log.Printf("Worker %s registered", worker.ID)
 }
@@ -619,8 +615,8 @@ func (m *MasterNode) assignJobToWorker(job *Job, worker *WorkerNode) error {
 	url := fmt.Sprintf("http://%s:9090/job/assign", worker.Address)
 
 	msg := Message{
-		Type: MessageTypeJobAssign,
-		WorkerID: worker.ID,
+		Type:      MessageTypeJobAssign,
+		WorkerID:  worker.ID,
 		TimeStamp: time.Now(),
 		Payload: JobAssignPayload{
 			Job: job,
@@ -635,8 +631,8 @@ func (m *MasterNode) cancelJobOnWorker(job *Job, worker *WorkerNode) error {
 	url := fmt.Sprintf("http://%s:9090/job/cancel", worker.Address)
 
 	msg := Message{
-		Type: MessageTypeJobCancel,
-		WorkerID: worker.ID,
+		Type:      MessageTypeJobCancel,
+		WorkerID:  worker.ID,
 		TimeStamp: time.Now(),
 		Payload: JobCancelPayload{
 			Job: job,

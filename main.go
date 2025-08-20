@@ -1,19 +1,20 @@
 package main
 
 import (
-	"log"
 	"fmt"
-	"github.com/spf13/cobra"
+	"log"
 	"os"
 
-	. "heapscheduler/cluster"
+	"github.com/spf13/cobra"
+
+	. "legion/cluster"
 )
 
 var (
 	// Global flags
 	verbose bool
 	output  string
-	mode    string  // master or worker
+	mode    string // master or worker
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -29,7 +30,7 @@ Use the --mode flag to specify which service type to run.`,
 		if verbose {
 			fmt.Printf("Starting in verbose mode, service type: %s\n", mode)
 		}
-		
+
 		switch mode {
 		case "master":
 			cluster := NewCluster("...")

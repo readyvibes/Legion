@@ -3,12 +3,15 @@ package cluster
 import (
 	"encoding/json"
 	"fmt"
+	. "legion/jobs"
 	"log"
 	"net/http"
-	"sync"
-	. "heapscheduler/jobs"
-	"github.com/gorilla/mux"
 	"strconv"
+	"sync"
+
+	"github.com/gorilla/mux"
+
+	. "legion/db"
 )
 
 type Cluster struct {
@@ -20,16 +23,29 @@ type Cluster struct {
 func NewCluster(dbURL string, address string, port int) *Cluster {
 	masterNodeOption := MasterNodeOptions{
 		Address: address,
-		Port: port,
+		Port:    port,
 	}
 	master := NewMasterNode(dbURL, &masterNodeOption)
-	
+
 	return &Cluster{
 		masterNode: master,
 	}
 }
 
 func (c *Cluster) Start() error {
+
+	pool, err := ConnectDB() // Database creation is done in bootstrap.sh
+	if err != nil {
+		log.Fatal("Failed to connect to database:", err)
+	}
+
+	defer pool.Close()
+
+	err = Migrate(pool)
+	if err != nil {
+		log.Fatal("Failed to create LegionDB Database:", err)
+	}
+
 	// Start master node
 	if err := c.masterNode.Start(); err != nil {
 		return fmt.Errorf("failed to start master node: %v", err)
@@ -114,8 +130,8 @@ func (c *Cluster) handleClusterStatus(w http.ResponseWriter, r *http.Request) {
 	c.mu.RUnlock()
 
 	status := map[string]interface{}{
-		"workers": workerCount,
-		"master":  "running",
+		"workers":    workerCount,
+		"master":     "running",
 		"queue_size": c.masterNode.GetQueueLength(),
 	}
 

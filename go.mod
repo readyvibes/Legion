@@ -1,4 +1,4 @@
-module heapscheduler
+module legion
 
 go 1.24.5
 

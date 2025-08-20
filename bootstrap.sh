@@ -65,6 +65,13 @@ EOF
 
     echo "DNS configured to use local dnsmasq"
 
+    sudo apt install -y postgresql
+
+    # Or create root user with superuser privileges
+    sudo -u postgres createuser --superuser root
+
+    createdb legiondb
+
 elif [ "$1" = "worker" ]; then
     echo "Setting up certificates for WORKER node"
     

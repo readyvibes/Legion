@@ -1,10 +1,10 @@
 package cluster
 
 import (
-	"time"
 	"net"
+	"time"
 
-	. "heapscheduler/jobs"
+	. "legion/jobs"
 )
 
 type MessageType string
@@ -18,22 +18,22 @@ const (
 )
 
 type Message struct {
-	Type 	  MessageType `json:"type"`
-	WorkerID  string 	`json:"worker_id,omitempty"`
-	TimeStamp time.Time 	`json:"timestamp"`
+	Type      MessageType `json:"type"`
+	WorkerID  string      `json:"worker_id,omitempty"`
+	TimeStamp time.Time   `json:"timestamp"`
 	Payload   interface{} `json:"payload,omitempty"`
 }
 
 type RegisterPayload struct {
 	WorkerID string `json:"worker_id"`
-	Address string `json:"address"`
-	Port int `json:"port"`
+	Address  string `json:"address"`
+	Port     int    `json:"port"`
 }
 
 type HeartbeatPayload struct {
-	Available bool `json:"available"`
-	CurrentJob uint64 `json:"current_job,omitempty"`
-	CPUUsage float64 `json:"cpu_usage,omitempty"`
+	Available   bool    `json:"available"`
+	CurrentJob  uint64  `json:"current_job,omitempty"`
+	CPUUsage    float64 `json:"cpu_usage,omitempty"`
 	MemoryUsage float64 `json:"memory_usage,omitempty"`
 }
 
@@ -46,9 +46,9 @@ type JobCancelPayload struct {
 }
 
 type JobCompletePayload struct {
-	JobID uint64 `json:"job_id"`
+	JobID  uint64 `json:"job_id"`
 	Result string `json:"result"`
-	Error string `json:"error,omitempty"`
+	Error  string `json:"error,omitempty"`
 }
 
 func getLocalIP() string {
