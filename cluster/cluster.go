@@ -20,12 +20,27 @@ type Cluster struct {
 	mu         sync.RWMutex
 }
 
-func NewCluster(dbURL string, address string, port int) *Cluster {
+func NewCluster(address string, port int) *Cluster {
 	masterNodeOption := MasterNodeOptions{
 		Address: address,
 		Port:    port,
 	}
-	master := NewMasterNode(dbURL, &masterNodeOption)
+
+	pool, err := ConnectDB() // Database creation is done in bootstrap.sh
+	if err != nil {
+		log.Fatal("Failed to connect to database:", err)
+		return nil
+	}
+
+	defer pool.Close()
+
+	err = Migrate(pool)
+	if err != nil {
+		log.Fatal("Failed to create Jobs Table:", err)
+		return nil
+	}
+
+	master := NewMasterNode(pool, &masterNodeOption)
 
 	return &Cluster{
 		masterNode: master,
@@ -33,18 +48,6 @@ func NewCluster(dbURL string, address string, port int) *Cluster {
 }
 
 func (c *Cluster) Start() error {
-
-	pool, err := ConnectDB() // Database creation is done in bootstrap.sh
-	if err != nil {
-		log.Fatal("Failed to connect to database:", err)
-	}
-
-	defer pool.Close()
-
-	err = Migrate(pool)
-	if err != nil {
-		log.Fatal("Failed to create LegionDB Database:", err)
-	}
 
 	// Start master node
 	if err := c.masterNode.Start(); err != nil {

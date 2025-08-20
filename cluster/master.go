@@ -44,7 +44,8 @@ type MasterNodeOptions struct {
 	Port    int
 }
 
-func NewMasterNode(dbURL string, option *MasterNodeOptions) *MasterNode {
+func NewMasterNode(pool *pgxpool.Pool, option *MasterNodeOptions) *MasterNode {
+
 	addr := "localhost"
 	port := 9090
 
@@ -55,21 +56,6 @@ func NewMasterNode(dbURL string, option *MasterNodeOptions) *MasterNode {
 		if option.Port != 0 {
 			port = option.Port
 		}
-	}
-
-	if dbURL == "" {
-		log.Println("Connection string is empty, using default settings")
-		return nil
-	}
-
-	poolConfig, err := pgxpool.ParseConfig(dbURL)
-	if err != nil {
-		return nil
-	}
-
-	pool, err1 := pgxpool.NewWithConfig(context.Background(), poolConfig)
-	if err1 != nil {
-		return nil
 	}
 
 	h := JobQueue{}
