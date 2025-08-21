@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -61,6 +62,11 @@ func NewMasterNode(pool *pgxpool.Pool, option *MasterNodeOptions) *MasterNode {
 	h := JobQueue{}
 	heap.Init(&h)
 
+	masterLog, err := os.OpenFile("master.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644) 
+	if err != nil {
+		panic(err)
+	}
+
 	serverLogFile, err := os.OpenFile("master-server.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		panic(err)
@@ -85,6 +91,9 @@ func NewMasterNode(pool *pgxpool.Pool, option *MasterNodeOptions) *MasterNode {
 		db:       pool,
 		address:  addr,
 		port:     port,
+		logger:   slog.New(slog.NewTextHandler(masterLog, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		})),
 		serverLogger: slog.New(slog.NewTextHandler(serverLogFile, &slog.HandlerOptions{
 			Level: slog.LevelInfo,
 		})),
@@ -108,18 +117,21 @@ func (m *MasterNode) Start() error {
 	m.ctx, m.cancel = context.WithCancel(context.Background())
 
 	// Start communication server for workers
+	m.logger.Info("Starting Master Server")
 	m.serverLogger.Info("Starting Master Server")
 	go m.StartCommunicationServer() // Lines 73 - 187
 
-	m.schedulerLogger.Info("Starting Master Scheduler Loop")
 	// Start scheduler loop
-	go m.schedulerLoop() // Lines 189 - 259
+	m.logger.Info("Starting Master Server")
+	m.schedulerLogger.Info("Starting Master Scheduler Loop")
+	go m.schedulerLoop()
 
-	m.monitorLogger.Info("Starting Master Health Monitoring")
 	// Start worker health monitor
-	go m.monitorWorkers() // Lines 261 - 286
+	m.logger.Info("Starting Master Health Monitoring")
+	m.monitorLogger.Info("Starting Master Health Monitoring")
+	go m.monitorWorkers()
 
-	m.logger.Info("Master node started")
+	m.logger.Info("Master Node started")
 	return nil
 }
 
@@ -181,12 +193,14 @@ func (m *MasterNode) StartCommunicationServer() {
 func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request) {
 	var msg Message
 	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		m.serverLogger.Error("Invalid JSON")
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
 
 	payload, ok := msg.Payload.(map[string]interface{})
 	if !ok {
+		m.serverLogger.Error("Invalid Payload")
 		http.Error(w, "Invalid payload", http.StatusBadRequest)
 		return
 	}
@@ -196,7 +210,7 @@ func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request
 	port := int(payload["port"].(float64))
 
 	m.serverLogger.Info("Received Register From WorkerNode")
-	m.serverLogger.Info("Worker started", slog.String("workerID", workerID))
+	m.serverLogger.Info("Worker started", slog.String("workerID", workerID), slog.String("address", address))
 	m.mu.Lock()
 
 	// Create or update worker
@@ -207,10 +221,13 @@ func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request
 		}
 		worker := NewWorkerNode(&options) // Remember, not part of WorkerNode implementation, only used for MasterNode
 		m.workers[workerID] = worker
+		m.serverLogger.Info("Added Worker to Workers", slog.String("workerID", workerID), slog.String("address", address))
 	} else {
 		// Update existing worker
+		m.serverLogger.Info("Worker has already been added to Workers")
 		m.workers[workerID].lastSeen = time.Now()
 		m.workers[workerID].available = true
+		m.serverLogger.Info("Updated worker status instead")
 	}
 
 	m.mu.Unlock()
@@ -222,11 +239,13 @@ func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
+	m.serverLogger.Info("Responded register request with master_port")
 }
 
 func (m *MasterNode) handleHeartBeat(w http.ResponseWriter, r *http.Request) {
 	var msg Message
 	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		m.serverLogger.Error("Invalid JSON")
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
@@ -235,17 +254,22 @@ func (m *MasterNode) handleHeartBeat(w http.ResponseWriter, r *http.Request) {
 
 	if worker, exists := m.workers[msg.WorkerID]; exists {
 		worker.lastSeen = time.Now()
+		m.serverLogger.Info("Received HeartBeat from", slog.String("Worker", worker.ID))
 
 		if payload, ok := msg.Payload.(map[string]interface{}); ok {
 			worker.available = payload["available"].(bool)
+			m.serverLogger.Info("Updated Available Status for", slog.String("Worker", worker.ID))
+			
 			if jobID, exists := payload["current_job_id"]; exists && jobID != nil {
 				worker.currentJobID = uint64(jobID.(float64))
+				m.serverLogger.Info("Current JobID From Worker", slog.String("Worker", worker.ID))
 			} else {
 				worker.currentJobID = 0
 			}
 		}
+		m.serverLogger.Info("Updated Status of Worker:", slog.String("Worker", worker.ID) )
 	}
-
+	
 	m.mu.Unlock()
 
 	w.WriteHeader(http.StatusOK)
@@ -255,11 +279,13 @@ func (m *MasterNode) handleHeartBeat(w http.ResponseWriter, r *http.Request) {
 func (m *MasterNode) handleJobComplete(w http.ResponseWriter, r *http.Request) {
 	var msg Message
 	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		m.serverLogger.Error("Invalid JSON")
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 	}
 
 	payload, ok := msg.Payload.(map[string]interface{})
 	if !ok {
+		m.serverLogger.Error("Invalid Payload")
 		http.Error(w, "Invalid Payload", http.StatusBadRequest)
 	}
 
@@ -280,6 +306,7 @@ func (m *MasterNode) handleJobComplete(w http.ResponseWriter, r *http.Request) {
 		err = fmt.Errorf("%s", errorMsg)
 	}
 
+	m.serverLogger.Info("Job Completed")
 	m.OnJobCompleted(jobID, result, err)
 
 	w.WriteHeader(http.StatusOK)
@@ -322,7 +349,11 @@ func (m *MasterNode) scheduleJobs() {
 		now := time.Now()
 		job.StartTime = now
 
-		// Update database
+		m.schedulerLogger.Info("Running job", 
+			slog.String("jobID", strconv.FormatUint(job.ID, 10)),
+			slog.String("workerID", worker.ID))
+		
+			// Update database
 		m.updateJobStatusInDB(job.ID, StatusRunning)
 
 		m.assignJobToWorker(job, worker)
@@ -358,6 +389,7 @@ func (m *MasterNode) updateJobStatusInDB(id uint64, status Status) error {
 }
 
 func (m *MasterNode) monitorWorkers() {
+	m.monitorLogger.Info("Monitoring Status of Workers")
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -378,7 +410,7 @@ func (m *MasterNode) checkWorkerHealth() {
 	now := time.Now()
 	for id, worker := range m.workers {
 		if now.Sub(worker.lastSeen) > 60*time.Second {
-			log.Printf("Worker %s appears to be down", id)
+			m.monitorLogger.Error("Worker appears to be down:", slog.String("workerID", id))
 			// Handle worker failure - could reschedule its jobs
 		}
 	}
@@ -391,13 +423,14 @@ func (m *MasterNode) AddJob(job *Job) bool {
 
 	// First persist to DB to get the ID
 	if dbErr := m.persistJobToDB(job); dbErr != nil {
+		m.schedulerLogger.Error("Add Job Failed: Failed to add job to LegionDB", slog.String("jobID", strconv.FormatUint(job.ID, 10)),)
 		return false // Could log error too
 	}
 
 	// Then push into heap and map
 	heap.Push(m.jobQueue, job)
 	m.jobMap[job.ID] = job
-
+	m.schedulerLogger.Info("Add Job Successful:", slog.String("jobID", strconv.FormatUint(job.ID, 10)))
 	return true
 }
 
@@ -433,6 +466,7 @@ func (m *MasterNode) CancelJob(id uint64) bool {
 
 	job, ok := m.jobMap[id]
 	if !ok || job.Index < 0 || job.Index >= len(*m.jobQueue) {
+		m.schedulerLogger.Error("Cancel Job Failed: Job Not Found", slog.String("jobID", strconv.FormatUint(id, 10)))
 		return false // Job not found or invalid index
 	}
 	heap.Remove(m.jobQueue, job.Index) // Remove from Priority Queue
@@ -441,21 +475,22 @@ func (m *MasterNode) CancelJob(id uint64) bool {
 	// Update status in database
 	if err := m.updateJobStatusInDB(id, StatusCancelled); err != nil {
 		// Optional: log error, but job is already removed in memory
+		m.schedulerLogger.Error("Cancel Job Failed: Failed to Update Job Status in Legion DB", slog.String("jobID", strconv.FormatUint(id, 10)))
 		return false
 	}
 
 	// Find all the workers that are running specified job
-	for _, job := range m.jobMap {
-		for _, worker := range m.workers {
-			if worker.currentJobID == job.ID {
-				err := m.cancelJobOnWorker(job, worker)
-				if err != nil {
-					return false
-				}
+	
+	for _, worker := range m.workers {
+		if worker.currentJobID == id {
+			err := m.cancelJobOnWorker(job, worker)
+			if err != nil {
+				m.schedulerLogger.Error("Cancel Job Failed: Failed to cancel job", slog.String("jobID", strconv.FormatUint(id, 10)))
+				return false
 			}
 		}
 	}
-
+	m.schedulerLogger.Info("Cancel Job Successful:", slog.String("jobID", strconv.FormatUint(id, 10)))
 	return true
 }
 
@@ -598,7 +633,7 @@ func (m *MasterNode) RegisterWorker(worker *WorkerNode) {
 }
 
 func (m *MasterNode) assignJobToWorker(job *Job, worker *WorkerNode) error {
-	url := fmt.Sprintf("http://%s:9090/job/assign", worker.Address)
+	url := fmt.Sprintf("http://%s:%d/job/assign", worker.Address, worker.Port)
 
 	msg := Message{
 		Type:      MessageTypeJobAssign,
@@ -614,7 +649,7 @@ func (m *MasterNode) assignJobToWorker(job *Job, worker *WorkerNode) error {
 }
 
 func (m *MasterNode) cancelJobOnWorker(job *Job, worker *WorkerNode) error {
-	url := fmt.Sprintf("http://%s:9090/job/cancel", worker.Address)
+	url := fmt.Sprintf("http://%s:%d/job/cancel", worker.Address, worker.Port)
 
 	msg := Message{
 		Type:      MessageTypeJobCancel,
