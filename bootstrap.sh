@@ -102,10 +102,28 @@ EOF
         exit 1
     fi
 
+    # Set password for root user
+    echo "Setting password for PostgreSQL root user..."
+    LEGION_DB_PASSWORD="legion123"
+    sudo -u postgres psql -c "ALTER USER root PASSWORD '$LEGION_DB_PASSWORD';" 2>/dev/null || {
+        echo "Failed to set password for root user"
+        exit 1
+    }
+    
+    echo "PostgreSQL root user password set successfully"
+    echo "Database URL: postgres://root:$LEGION_DB_PASSWORD@localhost:5432/legiondb?sslmode=disable"
+
     # Create database
     if command -v createdb &> /dev/null; then
         createdb legiondb 2>/dev/null || echo "Database legiondb may already exist"
         echo "Database legiondb created successfully"
+        
+        # Test the connection with password
+        if PGPASSWORD="$LEGION_DB_PASSWORD" psql -U root -d legiondb -c "SELECT 1;" >/dev/null 2>&1; then
+            echo "✓ Database connection test successful"
+        else
+            echo "✗ Database connection test failed"
+        fi
     else
         echo "createdb command not found, PostgreSQL installation may have failed"
         exit 1
