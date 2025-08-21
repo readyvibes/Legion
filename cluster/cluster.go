@@ -29,8 +29,6 @@ func NewCluster() *Cluster {
 		return nil
 	}
 
-	defer pool.Close()
-
 	err = Migrate(pool)
 	if err != nil {
 		log.Fatal("Failed to create Jobs Table:", err)
