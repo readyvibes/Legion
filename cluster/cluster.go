@@ -20,7 +20,7 @@ type Cluster struct {
 	mu         sync.RWMutex
 }
 
-func NewCluster(address string, port int) *Cluster {
+func NewCluster() *Cluster {
 	
 
 	pool, err := ConnectDB() // Database creation is done in bootstrap.sh
