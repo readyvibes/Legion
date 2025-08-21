@@ -33,46 +33,83 @@ if [ "$1" = "master" ]; then
 
     mkdir -p /var/log/legion
 
+    # Fix DNS first before installing packages
+    echo "Fixing DNS configuration..."
+    
+    # Backup original resolv.conf
+    sudo cp /etc/resolv.conf /etc/resolv.conf.backup
+    
+    # Use Google DNS temporarily for package installation
+    sudo tee /etc/resolv.conf > /dev/null <<EOF
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+search cluster.local
+EOF
+
+    # Update package lists
     sudo apt update
-    sudo apt install dnsmasq -y
 
-    # Configure dnsmasq
-    sudo tee /etc/dnsmasq.conf > /dev/null <<EOF
-    # Listen on all interfaces
-    interface=ens4
-    bind-interfaces
+    # Install required packages
+    sudo apt install -y dnsmasq postgresql
 
-    # DNS settings
-    domain=cluster.local
-    expand-hosts
+    # Configure dnsmasq AFTER postgresql is installed
+    sudo tee /etc/dnsmasq.d/cluster.conf > /dev/null <<EOF
+# Listen on all interfaces
+interface=ens4
+bind-interfaces
 
-    # Master node DNS record
-    address=/master.cluster.local/$(hostname -I | awk '{print $1}')
+# DNS settings
+domain=cluster.local
+expand-hosts
 
-    # DHCP range (optional)
-    dhcp-range=10.128.0.100,10.128.0.200,24h
+# Master node DNS record
+address=/master.cluster.local/$(hostname -I | awk '{print $1}')
 
-    # Log queries (for debugging)
-    log-queries
+# DHCP range (optional)
+dhcp-range=10.128.0.100,10.128.0.200,24h
+
+# Log queries (for debugging)
+log-queries
+
+# Forward DNS queries to upstream servers
+server=8.8.8.8
+server=8.8.4.4
+EOF
+
+    # Configure resolv.conf to use both local and upstream DNS
+    sudo tee /etc/resolv.conf > /dev/null <<EOF
+nameserver 127.0.0.1
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+search cluster.local
 EOF
 
     # Restart dnsmasq
     sudo systemctl restart dnsmasq
     sudo systemctl enable dnsmasq
 
-    # Configure system to use local dnsmasq
-    echo "nameserver 127.0.0.1" | sudo tee /etc/resolv.conf.new
-    echo "search cluster.local" | sudo tee -a /etc/resolv.conf.new
-    sudo mv /etc/resolv.conf.new /etc/resolv.conf
+    echo "DNS configured to use local dnsmasq with upstream fallback"
 
-    echo "DNS configured to use local dnsmasq"
+    # PostgreSQL setup
+    echo "Setting up PostgreSQL..."
+    
+    # Check if postgres user exists first
+    if id "postgres" &>/dev/null; then
+        echo "postgres user exists, creating root user..."
+        sudo -u postgres createuser --superuser root 2>/dev/null || echo "root user may already exist"
+    else
+        echo "postgres user doesn't exist, PostgreSQL may not be properly installed"
+        exit 1
+    fi
 
-    sudo apt install -y postgresql
-
-    # Or create root user with superuser privileges
-    sudo -u postgres createuser --superuser root
-
-    createdb legiondb
+    # Create database
+    if command -v createdb &> /dev/null; then
+        createdb legiondb 2>/dev/null || echo "Database legiondb may already exist"
+        echo "Database legiondb created successfully"
+    else
+        echo "createdb command not found, PostgreSQL installation may have failed"
+        exit 1
+    fi
 
 elif [ "$1" = "worker" ]; then
     echo "Setting up certificates for WORKER node"
