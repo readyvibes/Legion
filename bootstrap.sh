@@ -31,6 +31,8 @@ if [ "$1" = "master" ]; then
     echo "Master certificates installed in /etc/ssl/certs/"
     echo "Copy ca.crt to worker nodes"
 
+    mkdir -p /var/log/legion
+
     sudo apt update
     sudo apt install dnsmasq -y
 
