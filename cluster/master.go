@@ -605,7 +605,7 @@ func (m *MasterNode) RegisterWorker(worker *WorkerNode) {
 }
 
 func (m *MasterNode) assignJobToWorker(job *Job, worker *WorkerNode) error {
-	url := fmt.Sprintf("http://%s:%d/job/assign", worker.Address, worker.Port)
+	url := fmt.Sprintf("http://%s:9090/job/assign", worker.Address)
 
 	msg := Message{
 		Type:      MessageTypeJobAssign,
@@ -621,7 +621,7 @@ func (m *MasterNode) assignJobToWorker(job *Job, worker *WorkerNode) error {
 }
 
 func (m *MasterNode) cancelJobOnWorker(job *Job, worker *WorkerNode) error {
-	url := fmt.Sprintf("http://%s:%d/job/cancel", worker.Address, worker.Port)
+	url := fmt.Sprintf("http://%s:9090/job/cancel", worker.Address)
 
 	msg := Message{
 		Type:      MessageTypeJobCancel,

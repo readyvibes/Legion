@@ -217,7 +217,6 @@ func (w *WorkerNode) registerWithMaster() {
 		Payload: RegisterPayload{
 			WorkerID: w.ID,
 			Address:  w.Address,
-			Port:     w.Port,
 		},
 	}
 

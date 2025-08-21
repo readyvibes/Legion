@@ -27,7 +27,6 @@ type Message struct {
 type RegisterPayload struct {
 	WorkerID string `json:"worker_id"`
 	Address  string `json:"address"`
-	Port     int    `json:"port"`
 }
 
 type HeartbeatPayload struct {
