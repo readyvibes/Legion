@@ -1,0 +1,6 @@
+Master Host 
+    - Cluster Server (listens on 8080)
+    - Master Server (listens on 9090) - used for scheduling and communicating with worker nodes. Don't want to have Cluster interact with Workers
+
+Worker Host
+    - Worker Server (listens on 9090)

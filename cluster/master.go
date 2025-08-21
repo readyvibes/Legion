@@ -24,8 +24,6 @@ import (
 )
 
 type MasterNode struct {
-	address         string
-	port            int
 	db              *pgxpool.Pool
 	jobQueue        *JobQueue
 	jobMap          map[uint64]*Job        // Add a map for fast lookup
@@ -40,24 +38,7 @@ type MasterNode struct {
 	monitorLogger   *slog.Logger
 }
 
-type MasterNodeOptions struct {
-	Address string
-	Port    int
-}
-
-func NewMasterNode(pool *pgxpool.Pool, option *MasterNodeOptions) *MasterNode {
-
-	addr := "localhost"
-	port := 9090
-
-	if option != nil {
-		if option.Address != "" {
-			addr = option.Address
-		}
-		if option.Port != 0 {
-			port = option.Port
-		}
-	}
+func NewMasterNode(pool *pgxpool.Pool) *MasterNode {
 
 	h := JobQueue{}
 	heap.Init(&h)
@@ -89,8 +70,6 @@ func NewMasterNode(pool *pgxpool.Pool, option *MasterNodeOptions) *MasterNode {
 		jobQueue: &h,
 		jobMap:   make(map[uint64]*Job),
 		db:       pool,
-		address:  addr,
-		port:     port,
 		logger:   slog.New(slog.NewTextHandler(masterLog, &slog.HandlerOptions{
 			Level: slog.LevelInfo,
 		})),
@@ -207,7 +186,6 @@ func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request
 
 	workerID := payload["worker_id"].(string)
 	address := payload["address"].(string)
-	port := int(payload["port"].(float64))
 
 	m.serverLogger.Info("Received Register From WorkerNode")
 	m.serverLogger.Info("Worker started", slog.String("workerID", workerID), slog.String("address", address))
@@ -215,11 +193,7 @@ func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request
 
 	// Create or update worker
 	if _, exists := m.workers[workerID]; !exists { // If workerID does not exist in Workers
-		options := WorkerNodeOptions{
-			Address: address,
-			Port:    port,
-		}
-		worker := NewWorkerNode(&options) // Remember, not part of WorkerNode implementation, only used for MasterNode
+		worker := NewWorkerNode(&address) // Remember, not part of WorkerNode implementation, only used for MasterNode
 		m.workers[workerID] = worker
 		m.serverLogger.Info("Added Worker to Workers", slog.String("workerID", workerID), slog.String("address", address))
 	} else {
@@ -234,12 +208,10 @@ func (m *MasterNode) handleWorkerRegister(w http.ResponseWriter, r *http.Request
 
 	response := map[string]interface{}{
 		"status":      "registered",
-		"master_port": m.port,
 	}
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
-	m.serverLogger.Info("Responded register request with master_port")
 }
 
 func (m *MasterNode) handleHeartBeat(w http.ResponseWriter, r *http.Request) {

@@ -21,10 +21,7 @@ type Cluster struct {
 }
 
 func NewCluster(address string, port int) *Cluster {
-	masterNodeOption := MasterNodeOptions{
-		Address: address,
-		Port:    port,
-	}
+	
 
 	pool, err := ConnectDB() // Database creation is done in bootstrap.sh
 	if err != nil {
@@ -40,7 +37,7 @@ func NewCluster(address string, port int) *Cluster {
 		return nil
 	}
 
-	master := NewMasterNode(pool, &masterNodeOption)
+	master := NewMasterNode(pool)
 
 	return &Cluster{
 		masterNode: master,
