@@ -52,19 +52,16 @@ func NewMasterNode(pool *pgxpool.Pool) *MasterNode {
 	if err != nil {
 		panic(err)
 	}
-	defer serverLogFile.Close()
 
 	schedulerLogFile, err := os.OpenFile("/var/log/legion/master-scheduler.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		panic(err)
 	}
-	defer schedulerLogFile.Close()
 
 	monitorLogFile, err := os.OpenFile("/var/log/legion/master-monitor.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		panic(err)
 	}
-	defer monitorLogFile.Close()
 
 	return &MasterNode{
 		jobQueue: &h,
