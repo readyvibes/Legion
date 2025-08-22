@@ -4,3 +4,15 @@ Master Host
 
 Worker Host
     - Worker Server (listens on 9090)
+
+# Example Submit
+# Run on Master Host
+curl -X POST http://localhost:8080/jobs/add \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Hello World Job",
+    "description": "A simple test job that prints hello world",
+    "command": "echo \"Hello from Legion cluster!\"",
+    "username": "testuser",
+    "priority": 5
+  }'
