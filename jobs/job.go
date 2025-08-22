@@ -37,7 +37,7 @@ type NewJobRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Command     string `json:"command"`
-	User        string `json:"user"`
+	Username    string `json:"username"`
 	Priority    *int    `json:"priority"`
 }
 
@@ -51,7 +51,7 @@ func NewJob(req NewJobRequest) *Job {
         Name:        req.Name,
         Description: req.Description,
         Command:     req.Command,
-        User:        req.User,
+        Username:    req.Username,
         Priority:    priority,
         Status:      StatusPending,
         CreatedAt:   now,
