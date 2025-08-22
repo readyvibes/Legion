@@ -14,7 +14,7 @@ func Migrate(pool *pgxpool.Pool) error {
 		description TEXT,
 		status TEXT DEFAULT 'Pending',
 		command TEXT NOT NULL,
-		user TEXT,
+		username TEXT,
 		priority INT DEFAULT 0,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
