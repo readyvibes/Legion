@@ -406,7 +406,7 @@ func (m *MasterNode) AddJob(job *Job) bool {
 
 func (m *MasterNode) persistJobToDB(job *Job) error {
 	query := `
-        INSERT INTO jobs (name, description, status, command, user, priority, created_at, updated_at)
+        INSERT INTO jobs (name, description, status, command, username, priority, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING id;
     `
@@ -418,7 +418,7 @@ func (m *MasterNode) persistJobToDB(job *Job) error {
 		job.Description,
 		job.Status,
 		job.Command,
-		job.User,
+		job.Username,
 		job.Priority,
 		now,
 		now,
@@ -533,7 +533,7 @@ func (m *MasterNode) GetJob(id uint64) (*Job, error) {
 
 func (m *MasterNode) GetJobFromDB(id uint64) (*Job, error) {
 	query := `
-		SELECT id, name, description, status, command, user, priority, created_at, updated_at, start_time, end_time
+		SELECT id, name, description, status, command, username, priority, created_at, updated_at, start_time, end_time
 		FROM jobs
 		WHERE id = $1;
 	`
@@ -547,7 +547,7 @@ func (m *MasterNode) GetJobFromDB(id uint64) (*Job, error) {
 		&job.Description,
 		&job.Status,
 		&job.Command,
-		&job.User,
+		&job.Username,
 		&job.Priority,
 		&job.CreatedAt,
 		&job.UpdatedAt,

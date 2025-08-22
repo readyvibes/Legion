@@ -22,7 +22,7 @@ type Job struct {
 	StartTime   time.Time
 	EndTime    time.Time
 	Command     string
-	User        string
+	Username    string
 	Priority    int
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
