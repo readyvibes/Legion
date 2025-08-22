@@ -285,12 +285,13 @@ func (m *MasterNode) handleJobComplete(w http.ResponseWriter, r *http.Request) {
 func (m *MasterNode) schedulerLoop() {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
-
+	m.schedulerLogger.Info("Running Scheduler Loop")
 	for {
 		select {
 		case <-m.ctx.Done():
 			return
 		case <-ticker.C:
+			m.schedulerLogger.Info("Scheduling Jobs")
 			m.scheduleJobs()
 		}
 	}
