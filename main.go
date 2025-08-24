@@ -1,35 +1,41 @@
 package main
 
 import (
-	"log"
-	. "heapscheduler/cluster"
+	"flag"
+	"fmt"
+	"os"
+
+	. "legion/cluster"
 )
 
 func main() {
-	// Create cluster
-	cluster := NewCluster("postgres://user:password@localhost/scheduler?sslmode=disable")
 
-	// Add some workers
-	worker1 := cluster.AddWorker("worker-1")
-	worker2 := cluster.AddWorker("worker-2")
-	worker3 := cluster.AddWorker("worker-3")
+	master := flag.Bool("master", false, "Run as master node")
+	worker := flag.Bool("worker", false, "Run as worker node")
 
-	// Start workers (in real implementation, these might be separate processes)
-	go func() {
-		log.Printf("Worker %s started", worker1.ID)
-		select {} // Keep alive
-	}()
+	flag.Parse()
 
-	go func() {
-		log.Printf("Worker %s started", worker2.ID)
-		select {} // Keep alive
-	}()
+	if *master && *worker {
+		fmt.Println("Error: Cannot run as both master and worker")
+		os.Exit(1)
+	}
 
-	go func() {
-		log.Printf("Worker %s started", worker3.ID)
-		select {} // Keep alive
-	}()
+	if !*master && !*worker {
+		fmt.Println("Error: Must specify either -master or -worker")
+		fmt.Println("Usage:")
+		fmt.Println("     ./legion -master      # Run as master node")
+		fmt.Println("     ./legion -worker      # Run as worker node")
+		os.Exit(1)
+	}
 
-	// Start cluster (this will block)
-	log.Fatal(cluster.Start())
+	if *master {
+		fmt.Println("Starting cluster in master mode")
+		// Create cluster
+		cluster := NewCluster()
+		cluster.Start()
+	} else if *worker {
+		fmt.Println("Starting cluster in worker mode")
+		worker := NewWorkerNode(nil)
+		worker.Start()
+	}
 }

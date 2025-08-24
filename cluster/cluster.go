@@ -3,31 +3,47 @@ package cluster
 import (
 	"encoding/json"
 	"fmt"
+	. "legion/jobs"
 	"log"
 	"net/http"
-	"sync"
-	. "heapscheduler/jobs"
-	"github.com/gorilla/mux"
 	"strconv"
+	"sync"
+
+	"github.com/gorilla/mux"
+
+	. "legion/db"
 )
 
 type Cluster struct {
 	masterNode *MasterNode
-	workers    map[string]*WorkerNode
 	server     *http.Server
 	mu         sync.RWMutex
 }
 
-func NewCluster(dbURL string) *Cluster {
-	master := NewMasterNode(dbURL)
+func NewCluster() *Cluster {
 	
+
+	pool, err := ConnectDB() // Database creation is done in bootstrap.sh
+	if err != nil {
+		log.Fatal("Failed to connect to database:", err)
+		return nil
+	}
+
+	err = Migrate(pool)
+	if err != nil {
+		log.Fatal("Failed to create Jobs Table:", err)
+		return nil
+	}
+
+	master := NewMasterNode(pool)
+
 	return &Cluster{
 		masterNode: master,
-		workers:    make(map[string]*WorkerNode),
 	}
 }
 
 func (c *Cluster) Start() error {
+
 	// Start master node
 	if err := c.masterNode.Start(); err != nil {
 		return fmt.Errorf("failed to start master node: %v", err)
@@ -35,7 +51,8 @@ func (c *Cluster) Start() error {
 
 	// Setup HTTP server
 	router := mux.NewRouter()
-	router.HandleFunc("/jobs", c.handleSubmitJob).Methods("POST")
+	router.HandleFunc("/jobs/add", c.handleSubmitJob).Methods("POST")
+	router.HandleFunc("/jobs/cancel", c.handleCancelJob).Methods("PUT")
 	router.HandleFunc("/jobs/{id}", c.handleGetJob).Methods("GET")
 	router.HandleFunc("/jobs", c.handleListJobs).Methods("GET")
 	router.HandleFunc("/cluster/status", c.handleClusterStatus).Methods("GET")
@@ -62,6 +79,19 @@ func (c *Cluster) handleSubmitJob(w http.ResponseWriter, r *http.Request) {
 	if !addedJob {
 		http.Error(w, "Failed to add job", http.StatusInternalServerError)
 		return
+	}
+}
+
+func (c *Cluster) handleCancelJob(w http.ResponseWriter, r *http.Request) {
+	var jobID uint64
+	if err := json.NewDecoder(r.Body).Decode(&jobID); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	removedJob := c.masterNode.CancelJob(jobID)
+	if !removedJob {
+		http.Error(w, "Failed to cancel job", http.StatusInternalServerError)
 	}
 }
 
@@ -94,12 +124,12 @@ func (c *Cluster) handleListJobs(w http.ResponseWriter, r *http.Request) {
 
 func (c *Cluster) handleClusterStatus(w http.ResponseWriter, r *http.Request) {
 	c.mu.RLock()
-	workerCount := len(c.workers)
+	workerCount := len(c.masterNode.workers)
 	c.mu.RUnlock()
 
 	status := map[string]interface{}{
-		"workers": workerCount,
-		"master":  "running",
+		"workers":    workerCount,
+		"master":     "running",
 		"queue_size": c.masterNode.GetQueueLength(),
 	}
 
@@ -110,17 +140,4 @@ func (c *Cluster) handleClusterStatus(w http.ResponseWriter, r *http.Request) {
 func (c *Cluster) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, "OK")
-}
-
-func (c *Cluster) AddWorker(workerID string) *WorkerNode {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	worker := NewWorkerNode(workerID, c.masterNode)
-	c.workers[workerID] = worker
-	
-	// Register worker with master
-	c.masterNode.RegisterWorker(worker)
-	
-	return worker
 }

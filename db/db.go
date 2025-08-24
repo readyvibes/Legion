@@ -6,7 +6,8 @@ import (
 )
 
 func ConnectDB() (*pgxpool.Pool, error) {
-	connString := "postgres://user:password@localhost:5432/mydb?sslmode=disable"
+	connString := "postgres://root:legion123@localhost:5432/legiondb?sslmode=disable"
+
 	poolConfig, err := pgxpool.ParseConfig(connString)
 	if err != nil {
 		return nil, err
