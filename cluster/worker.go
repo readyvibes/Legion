@@ -193,7 +193,6 @@ func (w *WorkerNode) handleJobCancel(writer http.ResponseWriter, r *http.Request
 	if w.currentJob != nil {
 		// Stop Job Function Below
 		// {Insert Here}
-
 		w.currentJob = nil
 		w.currentJobID = 0
 		w.available = true

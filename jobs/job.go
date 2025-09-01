@@ -30,6 +30,8 @@ type Job struct {
 	WorkerID    string // ID of the worker executing the job
 	Result 		string // Result of the job execution
 	Error       string
+	GitRepoLink string    // Repository URL for git-based jobs
+    WorkingDir  string    // Working directory for job execution
 }
 
 
@@ -39,6 +41,10 @@ type NewJobRequest struct {
 	Command     string `json:"command"`
 	Username    string `json:"username"`
 	Priority    *int    `json:"priority"`
+
+	// optional
+	GitRepoLink string `json:"git_repo_link,omitempty"` // https link, ex: https://github.com/readyvibes/Legion.git
+	WorkingDir  string `json:"working_dir,omitempty"` // relative to cloud host
 }
 
 func NewJob(req NewJobRequest) *Job {
@@ -47,6 +53,17 @@ func NewJob(req NewJobRequest) *Job {
     if req.Priority != nil {
         priority = *req.Priority
     }
+
+	gitRepoLink := ""
+	if req.GitRepoLink != "" {
+		gitRepoLink = req.GitRepoLink
+	}
+
+	workDir := "home/" + req.Username // default working dir in google cloud is /home/username
+	if req.WorkingDir != "" {
+		workDir = req.WorkingDir
+	}
+
     return &Job{
         Name:        req.Name,
         Description: req.Description,
@@ -57,5 +74,9 @@ func NewJob(req NewJobRequest) *Job {
         CreatedAt:   now,
         UpdatedAt:   now,
         Index:       -1,
+
+		// optional fields
+		GitRepoLink: gitRepoLink,
+		WorkingDir:  workDir,
     }
 }
