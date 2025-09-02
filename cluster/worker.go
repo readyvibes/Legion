@@ -164,8 +164,16 @@ func (w *WorkerNode) ExecuteJob(job *Job) {
 
 	log.Printf("Worker %s executing job: %s", w.ID, job.Command)
 
+	var result string
+	var err error
+
 	// Simulate job execution
-	result, err := w.executeCommand(job.Command)
+	if job.GitRepoLink != "" {
+		result, err = CloneRepoAndExecute(job.GitRepoLink, job.WorkingDir, job.Command)
+	} else {
+		result, err = w.executeCommand(job.Command)
+	}
+	
 	if err != nil {
 		log.Printf("Encountered the following error: %s", err)
 	}
