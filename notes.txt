@@ -16,3 +16,6 @@ curl -X POST http://localhost:8080/jobs/add \
     "username": "testuser",
     "priority": 5
   }'
+
+# Build Command (Windows)
+$env:GOOS="linux"; $env:GOARCH="amd64"; go build -o legion main.go
