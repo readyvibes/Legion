@@ -65,7 +65,7 @@ func NewWorkerNode(addr *string) *WorkerNode {
 }
 
 func (w *WorkerNode) initHTTPSClient() error {
-	certFile, err := os.Open("/etc/ssl/ca.cert")
+	certFile, err := os.Open("/etc/ssl/certs/ca.crt")
 	if err != nil {
 		// Handle error
 	}

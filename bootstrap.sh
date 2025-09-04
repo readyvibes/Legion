@@ -19,7 +19,12 @@ if [ "$1" = "master" ]; then
     openssl x509 -req -in master.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out master.crt -days 365 -sha256
 
     # Install master certificates
-    sudo cp ca.crt /etc/ssl/certs/
+    sudo cp ca.crt /mnt/legion # Copy Over to EFS for Compute Node Setup
+    sudo cp ca.key /mnt/legion #
+    sudo chmod 644 /mnt/legion/ca.crt
+
+    sudo cp ca.crt /etc/ssl/certs
+    sudo cp ca.key /etc/ssl/certs
     sudo cp master.crt /etc/ssl/certs/
     sudo cp master.key /etc/ssl/private/
 
@@ -137,7 +142,7 @@ elif [ "$1" = "worker" ]; then
     sudo mkdir -p /etc/ssl/private
 
     # Check if ca.crt exists (should be copied from master)
-    if [ ! -f "ca.crt" ]; then
+    if [ ! -f "/mnt/legion/ca.crt" ]; then
         echo "ERROR: ca.crt not found. Copy it from master node first."
         exit 1
     fi
@@ -147,15 +152,16 @@ elif [ "$1" = "worker" ]; then
     openssl req -new -key worker.key -out worker.csr -subj "/C=US/ST=NJ/O=HPC/CN=worker01.cluster.local"
     
     # Need ca.key to sign worker cert - this should be done on master
-    if [ ! -f "ca.key" ]; then
+    if [ ! -f "/mnt/legion/ca.key" ]; then
         echo "ERROR: ca.key not found. Generate worker cert on master node or copy ca.key"
         exit 1
     fi
     
-    openssl x509 -req -in worker.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out worker.crt -days 365 -sha256
+    openssl x509 -req -in worker.csr -CA /mnt/legion/ca.crt -CAkey /mnt/legion/ca.key -CAcreateserial -out worker.crt -days 365 -sha256
 
     # Install worker certificates
-    sudo cp ca.crt /etc/ssl/certs/
+    sudo cp /mnt/legion/ca.crt /etc/ssl/certs/
+    sudo cp /mnt/legion/ca.key /etc/ssl/certs/
     sudo cp worker.crt /etc/ssl/certs/
     sudo cp worker.key /etc/ssl/private/
 

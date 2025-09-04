@@ -112,7 +112,7 @@ func (m *MasterNode) Start() error {
 }
 
 func (m *MasterNode) initHTTPSClient() error {
-	certFile, err := os.Open("/etc/ssl/ca.cert")
+	certFile, err := os.Open("/etc/ssl/certs/ca.crt")
 	if err != nil {
 		// Handle error
 		m.logger.Error("Failed to open CA (Certificate Authority) Certificate")
